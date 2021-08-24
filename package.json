@@ -1,6 +1,6 @@
 {
   "name": "fast-preview",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "main": "index.js",
   "license": "MIT",
   "description": "A tool for generating thumbnail(animated webp) from a video",
@@ -14,7 +14,10 @@
     "mail": "silencetheseyears@foxmail.com",
     "url": "https://github.com/TurnerXi/fast-preview/issues"
   },
-  "devDependencies": {
+  "scripts": {
+    "publish": "npm publish --access public"
+  },
+  "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^1.2.0",
     "chalk": "^4.1.2"
