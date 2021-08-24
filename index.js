@@ -18,8 +18,7 @@ module.exports = class FastPreview {
   constructor(videoPath, options = { count: SNAP_COUNT, seconds: THRESHOLD, dist_path: DEFAULT_DIST }) {
     this.videoPath = path.resolve(process.cwd(), videoPath)
     if (!fs.existsSync(this.videoPath)) {
-      console.error(`can\`t found the video path: ${this.videoPath}`)
-      return
+      throw new Error(`can\`t found the video path: ${this.videoPath}`)
     }
     if (!fs.existsSync(options.dist_path)) {
       fs.mkdirSync(options.dist_path, { recursive: true })
