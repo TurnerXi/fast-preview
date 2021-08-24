@@ -14,9 +14,6 @@
     "mail": "silencetheseyears@foxmail.com",
     "url": "https://github.com/TurnerXi/fast-preview/issues"
   },
-  "scripts": {
-    "publish": "npm publish --access public"
-  },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^1.2.0",
