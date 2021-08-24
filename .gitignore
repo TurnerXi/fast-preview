@@ -1,0 +1,4 @@
+.history
+.tmp
+build/
+node_modules/
