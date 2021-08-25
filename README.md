@@ -29,6 +29,7 @@ var preview = new FastPreview('video.mp4',{
   clip_time: 5,
   clip_select_strategy: 'max-size', // max-size min-size random
   clip_range: [0.1,0.9],
+  fps_rate: 10, // 'keep' number
   dist_path: __dirname,
   speed_multi: 2
 });
@@ -41,6 +42,7 @@ preview.exec()
 - `clip_time`: 每个片段持续时间(秒)
 - `clip_select_strategy`: 片段选择策略
 - `clip_range`: 片段选择范围(视频时间的百分比)
+- `fps_rate`: 图像帧率(keep: 保持原视频帧率)
 - `speed_multi`: 片段播放速度的倍数
 - `dist_path`: 动态预览图生成的路径
 

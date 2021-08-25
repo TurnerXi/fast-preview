@@ -16,6 +16,7 @@ const DEFAULT_DIST = process.cwd()
 const TEMP_PATH = path.join(process.cwd(), '.tmp')
 const CLIP_SELECT_STRATEGY = 'max-size' // max-size min-size random
 const CLIP_RANGE = [0.1, 0.9]
+const FPS_RATE = 10 // 'keep' number
 
 module.exports = class FastPreview {
   constructor(
@@ -25,6 +26,7 @@ module.exports = class FastPreview {
       clip_time: CLIP_TIME,
       clip_select_strategy: CLIP_SELECT_STRATEGY,
       clip_range: CLIP_RANGE,
+      fps_rate: FPS_RATE,
       dist_path: DEFAULT_DIST,
       speed_multi: SPEED_MULTI
     }
@@ -39,8 +41,8 @@ module.exports = class FastPreview {
     this.speed_multi = options.speed_multi || SPEED_MULTI
     this.clip_count = options.clip_count || CLIP_COUNT
     this.clip_time = options.clip_time || CLIP_TIME
+    this.fps_rate = options.fps_rate || FPS_RATE
     this.dist_path = options.dist_path || DEFAULT_DIST
-    this.clips = []
     if (!fs.existsSync(this.dist_path)) {
       fs.mkdirSync(this.dist_path, { recursive: true })
     }
@@ -53,8 +55,8 @@ module.exports = class FastPreview {
   async exec() {
     const data = await this.showSceneFrames(this.videoPath)
     const [start, end] = this.clip_range.map((item) => item * data.stream.duration_ts)
-    await this.parseFrames(data.frames.filter((item) => item.pkt_pts >= start && item.pkt_pts <= end))
-    await this.mergeClips()
+    const clips = await this.parseFrames(data.frames.filter((item) => item.pkt_pts >= start && item.pkt_pts <= end))
+    await this.mergeClips(clips)
     await this.transToWebp()
     this.clear()
   }
@@ -98,68 +100,73 @@ module.exports = class FastPreview {
   }
 
   async parseFrames(frames) {
-    const clips = this.findClips(frames)
+    frames = this.searchFrames(frames)
     let index = 0
     let startTime = -1
-    for (let i = 0; i < clips.length && index < this.clip_count; i++) {
-      const item = clips[i]
-      const next = clips[i + 1]
+    const clips = []
+    for (let i = 0; i < frames.length && index < this.clip_count; i++) {
+      const item = frames[i]
+      const next = frames[i + 1]
       if (next && Number(next.pkt_pts_time) - Number(item.pkt_pts_time) < this.clip_time) {
         if (startTime === -1) {
           startTime = Number(next.pkt_pts_time)
         }
       } else {
         if (startTime === -1) {
-          await this.snapshot(index, Number(item.pkt_pts_time), this.clip_time)
+          clips.push(await this.snapshot(index, Number(item.pkt_pts_time), this.clip_time))
         } else {
-          await this.snapshot(index, startTime, Number(item.pkt_pts_time) - startTime + this.clip_time)
+          clips.push(await this.snapshot(index, startTime, Number(item.pkt_pts_time) - startTime + this.clip_time))
           startTime = -1
         }
         index++
       }
     }
+    return clips
   }
 
-  findClips(frames) {
-    let clips = []
+  searchFrames(frames) {
+    let temp = []
     if (this.clip_select_strategy === 'min-size') {
       const heap = new MaxHeap(frames, (a, b) => b.pkt_size - a.pkt_size)
-      while (clips.length < this.clip_count) {
+      while (temp.length < this.clip_count) {
         const target = heap.top(1)[0]
-        const idx = clips.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time)
+        const idx = temp.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time)
         if (idx === -1) {
-          clips.push(target)
+          temp.push(target)
         }
       }
     } else if (this.clip_select_strategy === 'random') {
-      while (clips.length < this.clip_count) {
-        const target = clips[Math.floor(Math.random() * frames.length)]
-        const idx = clips.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time)
+      while (temp.length < this.clip_count) {
+        const target = temp[Math.floor(Math.random() * frames.length)]
+        const idx = temp.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time)
         if (idx === -1) {
-          clips.add(target)
+          temp.add(target)
         }
       }
     } else {
       const heap = new MaxHeap(frames, (a, b) => a.pkt_size - b.pkt_size)
-      while (clips.length < this.clip_count) {
+      while (temp.length < this.clip_count) {
         const target = heap.top(1)[0]
-        const idx = clips.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time)
+        const idx = temp.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time)
         if (idx === -1) {
-          clips.push(target)
+          temp.push(target)
         }
       }
     }
-    clips.sort((a, b) => a.pkt_pts - b.pkt_pts)
-    return clips
+    temp.sort((a, b) => a.pkt_pts - b.pkt_pts)
+    return temp
   }
 
   snapshot(index, start, dur) {
     const dist = path.join(TEMP_PATH, `${leftPad(index, '0', 5)}.mp4`)
-    this.clips.push(dist)
-    console.log(`creating clip start at ${start}: ${dist}`)
+    console.log(`creating clip at ${start}: ${dist}`)
     Bar.init(dur)
     let chunk = ''
-    const result = spawn(ffmpeg_path, ['-ss', start, '-t', dur, '-i', this.videoPath, '-an', '-filter:v', `setpts=${1 / this.speed_multi}*PTS`, dist], { encoding: 'utf8' })
+    const params = ['-ss', start, '-t', dur, '-i', this.videoPath, '-an', '-filter:v', `setpts=${1 / this.speed_multi}*PTS`]
+    if (this.fps_rate !== 'keep' && typeof this.fps_rate === 'number') {
+      params.push(...['-r', this.fps_rate])
+    }
+    const result = spawn(ffmpeg_path, params.concat([dist]), { encoding: 'utf8' })
     return new Promise((resolve, reject) => {
       result.stderr.on('data', (data) => {
         chunk += data
@@ -173,15 +180,15 @@ module.exports = class FastPreview {
 
       result.on('close', (code) => {
         code === 0 && Bar.update(dur)
-        code === 0 ? resolve() : reject()
+        code === 0 ? resolve(dist) : reject()
       })
     })
   }
 
-  mergeClips() {
+  mergeClips(clips) {
     const outputTXTPath = path.join(TEMP_PATH, `/output.txt`)
     const outputMP4Path = path.join(TEMP_PATH, `/output.mp4`)
-    fs.writeFileSync(outputTXTPath, this.clips.map((item) => `file '${item}'`).join('\r\n'), { encoding: 'utf8' })
+    fs.writeFileSync(outputTXTPath, clips.map((item) => `file '${item}'`).join('\r\n'), { encoding: 'utf8' })
     const result = spawn(ffmpeg_path, ['-v', 'quiet', '-safe', '0', '-f', 'concat', '-i', outputTXTPath, '-c', 'copy', outputMP4Path], { encoding: 'utf8' })
     return new Promise((resolve, reject) => {
       result.stderr.on('data', (data) => {
@@ -245,7 +252,6 @@ module.exports = class FastPreview {
   }
 
   clear() {
-    this.clips = []
     fs.rmdirSync(TEMP_PATH, { recursive: true, maxRetries: 5, retryDelay: 5000 })
   }
 }
