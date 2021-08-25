@@ -156,7 +156,7 @@ module.exports = class FastPreview {
   snapshot(index, start, dur) {
     const dist = path.join(TEMP_PATH, `${leftPad(index, '0', 5)}.mp4`)
     this.clips.push(dist)
-    console.log(`creating clip: ${dist}`)
+    console.log(`creating clip start at ${start}: ${dist}`)
     Bar.init(dur)
     let chunk = ''
     const result = spawn(ffmpeg_path, ['-ss', start, '-t', dur, '-i', this.videoPath, '-an', '-filter:v', `setpts=${1 / this.speed_multi}*PTS`, dist], { encoding: 'utf8' })
