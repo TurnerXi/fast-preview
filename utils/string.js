@@ -5,3 +5,7 @@ module.exports.leftPad = function (n, fullfill = '0', count = 1) {
   }
   return str
 }
+
+module.exports.escapePath = function (path) {
+  return path.replace(/\\/g, '\\\\').replace(/:/g, '\\:')
+}

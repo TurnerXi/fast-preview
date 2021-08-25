@@ -3,7 +3,7 @@ const path = require('path')
 const { path: ffmpeg_path } = require('@ffmpeg-installer/ffmpeg')
 const { path: ffprobe_path } = require('@ffprobe-installer/ffprobe')
 const { spawn, spawnSync } = require('child_process')
-const { leftPad } = require('./utils/string')
+const { leftPad, escapePath } = require('./utils/string')
 const MaxHeap = require('./utils/max-heap')
 const ProgressBar = require('./utils/progress-bar')
 
@@ -51,9 +51,9 @@ module.exports = class FastPreview {
   }
 
   async exec() {
-    const data = await this.showPackets(this.videoPath)
+    const data = await this.showSceneFrames(this.videoPath)
     const [start, end] = this.clip_range.map((item) => item * data.stream.duration_ts)
-    await this.parsePackets(data.packets.filter((item) => item.pts >= start && item.pts <= end))
+    await this.parseFrames(data.frames.filter((item) => item.pkt_pts >= start && item.pkt_pts <= end))
     await this.mergeClips()
     await this.transToWebp()
     this.clear()
@@ -68,17 +68,19 @@ module.exports = class FastPreview {
     return streams[0]
   }
 
-  showPackets(videoPath) {
-    console.log('analyzing packets:')
+  showSceneFrames(videoPath) {
+    console.log(`analyzing frames: ${videoPath}`)
     const stream = this.showStreams(videoPath)
     Bar.init(stream.duration_ts)
     let chunk = ''
-    const probe = spawn(ffprobe_path, ['-v', 'quiet', '-show_packets', '-select_streams', 'v', '-of', 'json', videoPath], { encoding: 'utf8' })
+    const probe = spawn(ffprobe_path, ['-v', 'quiet', '-show_frames', '-select_streams', 'v', '-of', 'json', '-f', 'lavfi', `movie='${escapePath(this.videoPath)}',select='gt(scene\,.4)'`], {
+      encoding: 'utf8'
+    })
     return new Promise((resolve, reject) => {
       probe.stdout.on('data', (data) => {
         chunk += data
-        const lastPacket = JSON.parse(chunk.match(/[\S\s]+(\{[\S\s]+?\})/)[1])
-        Bar.update(lastPacket.pts)
+        const lastPacket = JSON.parse(chunk.match(/[\S\s]+(\{[\S\s]+?\{[\S\s]+?\}[\S\s]+?\})/)[1])
+        Bar.update(lastPacket.pkt_pts)
       })
 
       probe.stderr.on('data', (data) => {
@@ -95,22 +97,22 @@ module.exports = class FastPreview {
     })
   }
 
-  async parsePackets(packets) {
-    const clips = this.findClips(packets)
+  async parseFrames(frames) {
+    const clips = this.findClips(frames)
     let index = 0
     let startTime = -1
     for (let i = 0; i < clips.length && index < this.clip_count; i++) {
       const item = clips[i]
       const next = clips[i + 1]
-      if (next && Number(next.pts_time) - Number(item.pts_time) < this.clip_time) {
+      if (next && Number(next.pkt_pts_time) - Number(item.pkt_pts_time) < this.clip_time) {
         if (startTime === -1) {
-          startTime = Number(next.pts_time)
+          startTime = Number(next.pkt_pts_time)
         }
       } else {
         if (startTime === -1) {
-          await this.snapshot(index, Number(item.pts_time), this.clip_time)
+          await this.snapshot(index, Number(item.pkt_pts_time), this.clip_time)
         } else {
-          await this.snapshot(index, startTime, Number(item.pts_time) - startTime + this.clip_time)
+          await this.snapshot(index, startTime, Number(item.pkt_pts_time) - startTime + this.clip_time)
           startTime = -1
         }
         index++
@@ -118,43 +120,43 @@ module.exports = class FastPreview {
     }
   }
 
-  findClips(packets) {
+  findClips(frames) {
     let clips = []
     if (this.clip_select_strategy === 'min-size') {
-      const heap = new MaxHeap(packets, (a, b) => b.size - a.size)
+      const heap = new MaxHeap(frames, (a, b) => b.pkt_size - a.pkt_size)
       while (clips.length < this.clip_count) {
         const target = heap.top(1)[0]
-        const idx = clips.findIndex((item) => Math.abs(Number(target.pts_time) - Number(item.pts_time)) < this.clip_time)
+        const idx = clips.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time)
         if (idx === -1) {
           clips.push(target)
         }
       }
     } else if (this.clip_select_strategy === 'random') {
       while (clips.length < this.clip_count) {
-        const target = clips[Math.floor(Math.random() * packets.length)]
-        const idx = clips.findIndex((item) => Math.abs(Number(target.pts_time) - Number(item.pts_time)) < this.clip_time)
+        const target = clips[Math.floor(Math.random() * frames.length)]
+        const idx = clips.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time)
         if (idx === -1) {
           clips.add(target)
         }
       }
     } else {
-      const heap = new MaxHeap(packets, (a, b) => a.size - b.size)
+      const heap = new MaxHeap(frames, (a, b) => a.pkt_size - b.pkt_size)
       while (clips.length < this.clip_count) {
         const target = heap.top(1)[0]
-        const idx = clips.findIndex((item) => Math.abs(Number(target.pts_time) - Number(item.pts_time)) < this.clip_time)
+        const idx = clips.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time)
         if (idx === -1) {
           clips.push(target)
         }
       }
     }
-    clips.sort((a, b) => a.pts - b.pts)
+    clips.sort((a, b) => a.pkt_pts - b.pkt_pts)
     return clips
   }
 
   snapshot(index, start, dur) {
     const dist = path.join(TEMP_PATH, `${leftPad(index, '0', 5)}.mp4`)
     this.clips.push(dist)
-    console.log(`snapshot ${dist}:`)
+    console.log(`creating clip: ${dist}`)
     Bar.init(dur)
     let chunk = ''
     const result = spawn(ffmpeg_path, ['-ss', start, '-t', dur, '-i', this.videoPath, '-an', '-filter:v', `setpts=${1 / this.speed_multi}*PTS`, dist], { encoding: 'utf8' })
@@ -193,9 +195,9 @@ module.exports = class FastPreview {
   }
 
   transToWebp() {
-    console.log(`transform to webp:`)
     const mp4 = path.join(TEMP_PATH, `output.mp4`)
     const webp = path.join(this.dist_path, `${this.filename}.webp`)
+    console.log(`creating webp: ${webp}`)
     const stream = this.showStreams(mp4)
     Bar.init(stream.nb_frames)
     return new Promise((resolve, reject) => {
@@ -248,11 +250,11 @@ module.exports = class FastPreview {
   }
 }
 
-// packets
+// frames
 // "codec_type": "video",
 // "stream_index": 0,
 // "pts": 3356336,
-// "pts_time": "139.847333",
+// "pkt_pts_time": "139.847333",
 // "dts": 3355335,
 // "dts_time": "139.805625",
 // "duration": 1001,
@@ -266,7 +268,7 @@ module.exports = class FastPreview {
 // stream_index: 1,
 // key_frame: 1,
 // pkt_pts: 67584,
-// pkt_pts_time: '1.408000',
+// pkt_pkt_pts_time: '1.408000',
 // pkt_dts: 67584,
 // pkt_dts_time: '1.408000',
 // best_effort_timestamp: 67584,
