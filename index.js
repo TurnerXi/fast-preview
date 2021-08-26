@@ -1,7 +1,7 @@
 const fs = require('fs')
 const path = require('path')
-const { path: ffmpeg_path } = require('@ffmpeg-installer/ffmpeg')
-const { path: ffprobe_path } = require('@ffprobe-installer/ffprobe')
+// const { path: ffmpeg_path } = require('@ffmpeg-installer/ffmpeg')
+// const { path: ffprobe_path } = require('@ffprobe-installer/ffprobe')
 const { spawn, spawnSync } = require('child_process')
 const { leftPad, escapePath } = require('./utils/string')
 const MaxHeap = require('./utils/max-heap')
@@ -31,6 +31,18 @@ module.exports = class FastPreview {
       speed_multi: SPEED_MULTI
     }
   ) {
+    if (!FastPreview.ffmpeg_path) {
+      this.ffmpeg_path = process.env.FFMPEG_PATH || 'ffmpeg'
+    } else {
+      this.ffmpeg_path = FastPreview.ffmpeg_path
+    }
+
+    if (!FastPreview.ffprobe_path) {
+      this.ffprobe_path = process.env.FFPROBE_PATH || 'ffprobe'
+    } else {
+      this.ffprobe_path = FastPreview.ffprobe_path
+    }
+
     this.videoPath = path.resolve(process.cwd(), videoPath)
     if (!fs.existsSync(this.videoPath)) {
       throw new Error(`can\`t found the video path: ${this.videoPath}`)
@@ -62,7 +74,7 @@ module.exports = class FastPreview {
   }
 
   showStreams(videoPath) {
-    const result = spawnSync(ffprobe_path, ['-v', 'quiet', '-show_streams', '-select_streams', 'v', '-of', 'json', videoPath], { encoding: 'utf8' })
+    const result = spawnSync(this.ffprobe_path, ['-v', 'quiet', '-show_streams', '-select_streams', 'v', '-of', 'json', videoPath], { encoding: 'utf8' })
     if (result.stderr) {
       console.error(result.stderr)
     }
@@ -75,7 +87,7 @@ module.exports = class FastPreview {
     const stream = this.showStreams(videoPath)
     Bar.init(stream.duration_ts)
     let chunk = ''
-    const probe = spawn(ffprobe_path, ['-v', 'quiet', '-show_frames', '-select_streams', 'v', '-of', 'json', '-f', 'lavfi', `movie='${escapePath(this.videoPath)}',select='gt(scene\,.4)'`], {
+    const probe = spawn(this.ffprobe_path, ['-v', 'quiet', '-show_frames', '-select_streams', 'v', '-of', 'json', '-f', 'lavfi', `movie='${escapePath(this.videoPath)}',select='gt(scene\,.4)'`], {
       encoding: 'utf8'
     })
     return new Promise((resolve, reject) => {
@@ -166,7 +178,7 @@ module.exports = class FastPreview {
     if (this.fps_rate !== 'keep' && typeof this.fps_rate === 'number') {
       params.push(...['-r', this.fps_rate])
     }
-    const result = spawn(ffmpeg_path, params.concat([dist]), { encoding: 'utf8' })
+    const result = spawn(this.ffmpeg_path, params.concat([dist]), { encoding: 'utf8' })
     return new Promise((resolve, reject) => {
       result.stderr.on('data', (data) => {
         chunk += data
@@ -189,7 +201,7 @@ module.exports = class FastPreview {
     const outputTXTPath = path.join(TEMP_PATH, `/output.txt`)
     const outputMP4Path = path.join(TEMP_PATH, `/output.mp4`)
     fs.writeFileSync(outputTXTPath, clips.map((item) => `file '${item}'`).join('\r\n'), { encoding: 'utf8' })
-    const result = spawn(ffmpeg_path, ['-v', 'quiet', '-safe', '0', '-f', 'concat', '-i', outputTXTPath, '-c', 'copy', outputMP4Path], { encoding: 'utf8' })
+    const result = spawn(this.ffmpeg_path, ['-v', 'quiet', '-safe', '0', '-f', 'concat', '-i', outputTXTPath, '-c', 'copy', outputMP4Path], { encoding: 'utf8' })
     return new Promise((resolve, reject) => {
       result.stderr.on('data', (data) => {
         console.error(`stderr: ${data}`)
@@ -209,7 +221,7 @@ module.exports = class FastPreview {
     Bar.init(stream.nb_frames)
     return new Promise((resolve, reject) => {
       const result = spawn(
-        ffmpeg_path,
+        this.ffmpeg_path,
         [
           '-i',
           mp4,
@@ -253,6 +265,13 @@ module.exports = class FastPreview {
 
   clear() {
     fs.rmdirSync(TEMP_PATH, { recursive: true, maxRetries: 5, retryDelay: 5000 })
+  }
+
+  static setFfmpegPath(path) {
+    FastPreview.ffmpeg_path = path
+  }
+  static setFfprobePath(path) {
+    FastPreview.ffprobe_path = path
   }
 }
 
