@@ -15,7 +15,7 @@ fast-preview 需要安装ffmpeg才能工作。
 Ffmpeg.setFfmpegPath(path) 参数 path 是一个字符串，其中包含 ffmpeg 二进制文件的完整路径。
 Ffmpeg.setFfprobePath(path) 参数 path 是一个字符串，其中包含 ffprobe 二进制文件的完整路径。
 
-> 您也可以使用@ffmpeg-installer/ffmpeg和@ffprobe-installer/ffprobe，它们会自动下载您所在平台的ffmpeg和ffprobe并为您提供路径，详请见[demo/ffmpeg-install.js](https://github.com/TurnerXi/fast-preview/blob/main/demo/ffmpeg-install.js)
+> 您也可以使用@ffmpeg-installer/ffmpeg和@ffprobe-installer/ffprobe，它们会自动下载您所在平台的ffmpeg和ffprobe并为您提供路径，详请见[demo/ffmpeg-installer.js](https://github.com/TurnerXi/fast-preview/blob/main/demo/ffmpeg-installer.js)
 
 ## 安装
 
