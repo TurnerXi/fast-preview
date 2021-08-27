@@ -48,6 +48,10 @@ module.exports = class MaxHeap {
     return ans
   }
 
+  size() {
+    return this.stack.length
+  }
+
   swap(idx1, idx2) {
     ;[this.stack[idx1], this.stack[idx2]] = [this.stack[idx2], this.stack[idx1]]
   }

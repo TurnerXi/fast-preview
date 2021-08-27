@@ -1,7 +1,5 @@
 const fs = require('fs')
 const path = require('path')
-// const { path: ffmpeg_path } = require('@ffmpeg-installer/ffmpeg')
-// const { path: ffprobe_path } = require('@ffprobe-installer/ffprobe')
 const { spawn, spawnSync } = require('child_process')
 const { leftPad, escapePath } = require('./utils/string')
 const MaxHeap = require('./utils/max-heap')
@@ -65,12 +63,16 @@ module.exports = class FastPreview {
   }
 
   async exec() {
-    const data = await this.showSceneFrames(this.videoPath)
-    const [start, end] = this.clip_range.map((item) => item * data.stream.duration_ts)
-    const clips = await this.parseFrames(data.frames.filter((item) => item.pkt_pts >= start && item.pkt_pts <= end))
-    await this.mergeClips(clips)
-    await this.transToWebp()
-    this.clear()
+    try {
+      const data = await this.showSceneFrames(this.videoPath)
+      const [start, end] = this.clip_range.map((item) => item * data.stream.duration_ts)
+      const clips = await this.parseFrames(data.frames.filter((item) => item.pkt_pts >= start && item.pkt_pts <= end))
+      await this.mergeClips(clips)
+      await this.transToWebp()
+      this.clear()
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   showStreams(videoPath) {
@@ -83,7 +85,7 @@ module.exports = class FastPreview {
   }
 
   showSceneFrames(videoPath) {
-    console.log(`analyzing frames: ${videoPath}`)
+    console.log(`analyzing scene frames: ${videoPath}`)
     const stream = this.showStreams(videoPath)
     Bar.init(stream.duration_ts)
     let chunk = ''
@@ -93,8 +95,40 @@ module.exports = class FastPreview {
     return new Promise((resolve, reject) => {
       probe.stdout.on('data', (data) => {
         chunk += data
-        const lastPacket = JSON.parse(chunk.match(/[\S\s]+(\{[\S\s]+?\{[\S\s]+?\}[\S\s]+?\})/)[1])
-        Bar.update(lastPacket.pkt_pts)
+        const match = chunk.match(/[\S\s]+(\{[\S\s]+?\{[\S\s]+?\}[\S\s]+?\})/)
+        if (match) {
+          Bar.update(JSON.parse(match[1]).pkt_pts)
+        }
+      })
+
+      probe.stderr.on('data', (data) => {
+        console.error(`stderr: ${data}`)
+        reject(data)
+      })
+
+      probe.on('close', (code) => {
+        const data = JSON.parse(chunk)
+        if (data.frames.length > 0) {
+          data.stream = stream
+          code === 0 && Bar.update(stream.duration_ts)
+          code === 0 && resolve(data)
+        } else {
+          this.showAllFrames(stream, videoPath).then(resolve).catch(reject)
+        }
+      })
+    })
+  }
+
+  showAllFrames(stream, videoPath) {
+    let chunk = ''
+    const probe = spawn(this.ffprobe_path, ['-v', 'quiet', '-show_frames', '-select_streams', 'v', '-of', 'json', videoPath], { encoding: 'utf8' })
+    return new Promise((resolve, reject) => {
+      probe.stdout.on('data', (data) => {
+        chunk += data
+        const match = chunk.match(/[\S\s]+(\{[\S\s]+?\})/)
+        if (match) {
+          Bar.update(JSON.parse(match[1]).pkt_pts)
+        }
       })
 
       probe.stderr.on('data', (data) => {
@@ -106,63 +140,44 @@ module.exports = class FastPreview {
         const data = JSON.parse(chunk)
         data.stream = stream
         code === 0 && Bar.update(stream.duration_ts)
-        code === 0 ? resolve(data) : reject(data)
+        code === 0 && resolve(data)
       })
     })
   }
 
   async parseFrames(frames) {
-    frames = this.searchFrames(frames)
-    let index = 0
-    let startTime = -1
     const clips = []
-    for (let i = 0; i < frames.length && index < this.clip_count; i++) {
-      const item = frames[i]
-      const next = frames[i + 1]
-      if (next && Number(next.pkt_pts_time) - Number(item.pkt_pts_time) < this.clip_time) {
-        if (startTime === -1) {
-          startTime = Number(next.pkt_pts_time)
-        }
-      } else {
-        if (startTime === -1) {
-          clips.push(await this.snapshot(index, Number(item.pkt_pts_time), this.clip_time))
-        } else {
-          clips.push(await this.snapshot(index, startTime, Number(item.pkt_pts_time) - startTime + this.clip_time))
-          startTime = -1
-        }
-        index++
-      }
+    frames = this.searchFrames(frames)
+    for (let index = 0; index < frames.length; index++) {
+      clips.push(await this.snapshot(index, Number(frames[index].pkt_pts_time), this.clip_time))
     }
     return clips
   }
 
   searchFrames(frames) {
     let temp = []
+
+    const hasRepeatClip = (target) => temp.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time) === -1
+
     if (this.clip_select_strategy === 'min-size') {
       const heap = new MaxHeap(frames, (a, b) => b.pkt_size - a.pkt_size)
-      while (temp.length < this.clip_count) {
-        const target = heap.top(1)[0]
-        const idx = temp.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time)
-        if (idx === -1) {
-          temp.push(target)
-        }
+      while (heap.size() > 0 && temp.length < this.clip_count) {
+        const target = heap.pop()
+        if (hasRepeatClip(target)) temp.push(target)
       }
     } else if (this.clip_select_strategy === 'random') {
-      while (temp.length < this.clip_count) {
-        const target = temp[Math.floor(Math.random() * frames.length)]
-        const idx = temp.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time)
-        if (idx === -1) {
-          temp.add(target)
-        }
+      frames = [...frames]
+      while (frames.length > 0 && temp.length < this.clip_count) {
+        const index = Math.floor(Math.random() * frames.length)
+        const target = frames[index]
+        if (hasRepeatClip(target)) temp.push(target)
+        frames.splice(index, 1)
       }
     } else {
       const heap = new MaxHeap(frames, (a, b) => a.pkt_size - b.pkt_size)
-      while (temp.length < this.clip_count) {
-        const target = heap.top(1)[0]
-        const idx = temp.findIndex((item) => Math.abs(Number(target.pkt_pts_time) - Number(item.pkt_pts_time)) < this.clip_time)
-        if (idx === -1) {
-          temp.push(target)
-        }
+      while (heap.size() > 0 && temp.length < this.clip_count) {
+        const target = heap.pop()
+        if (hasRepeatClip(target)) temp.push(target)
       }
     }
     temp.sort((a, b) => a.pkt_pts - b.pkt_pts)
