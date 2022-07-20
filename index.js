@@ -22,7 +22,7 @@ const DEFALUT_SIZE = -1;
 
 module.exports = class FastPreview {
   constructor(
-    videoPath,
+    video,
     options = {
       clip_count: CLIP_COUNT,
       clip_time: CLIP_TIME,
@@ -46,12 +46,14 @@ module.exports = class FastPreview {
     } else {
       this.ffprobe_path = FastPreview.ffprobe_path;
     }
-
-    this.videoPath = path.resolve(process.cwd(), videoPath);
-    if (!fs.existsSync(this.videoPath)) {
-      throw new Error(`can\`t found the video path: ${this.videoPath}`);
+    if (video instanceof fs.ReadStream) {
+      this.video = video;
+    } else {
+      this.videoPath = video;
     }
-    this.filename = path.basename(videoPath, ".mp4");
+    if (!this.video && !fs.existsSync(this.videoPath)) {
+      throw new Error(`input video error`);
+    }
     this.clip_range =
       options.clip_range && options.clip_range.length >= 2
         ? options.clip_range
@@ -76,10 +78,13 @@ module.exports = class FastPreview {
 
   async exec() {
     try {
-      if (this.width !== DEFALUT_SIZE || this.height !== DEFALUT_SIZE) {
-        this.videoPath = await this.resizeVideo(this.videoPath);
+      if (this.video) {
+        this.videoPath = await this.writeVideo(this.video);
       }
-      const data = await this.showSceneFrames(this.videoPath);
+      if (this.width !== DEFALUT_SIZE || this.height !== DEFALUT_SIZE) {
+        await this.resizeVideo();
+      }
+      const data = await this.showSceneFrames();
       const [start, end] = this.clip_range.map(
         (item) => item * data.stream.duration_ts
       );
@@ -96,18 +101,31 @@ module.exports = class FastPreview {
       console.error(e);
     }
   }
-  resizeVideo(videoPath) {
-    console.log(`resize video: ${videoPath}`);
-    const stream = this.showStreams(videoPath);
+
+  writeVideo(stream) {
+    const dist = path.join(TEMP_PATH, Date.now() + ".mp4");
+    const writable = fs.createWriteStream(dist);
+    stream.pipe(writable);
+    return new Promise((resolve) => {
+      stream.on("end", () => {
+        resolve(dist);
+      });
+    });
+  }
+
+  resizeVideo() {
+    console.log(`resize video: ${this.videoPath}`);
+    const stream = this.showStreams(this.videoPath);
     Bar.init(Number(stream.duration));
 
-    const dist = path.join(TEMP_PATH, path.basename(videoPath));
+    const dist = path.join(TEMP_PATH, Date.now() + ".mp4");
     let chunk = "";
     const params = [
+      "-y",
       "-i",
-      videoPath,
+      this.videoPath,
       "-vf",
-      `scale = ${this.width}: ${this.height}`
+      `scale = ${this.width}: ${this.height}`,
     ];
     const result = spawn(this.ffmpeg_path, params.concat([dist]), {
       encoding: "utf8",
@@ -123,9 +141,11 @@ module.exports = class FastPreview {
         }
       });
 
-      result.on("close", (code) => {
+      result.on("close", (code, msg) => {
+        fs.rmSync(this.videoPath);
+        fs.renameSync(dist, this.videoPath);
         Bar.end();
-        code === 0 ? resolve(dist) : reject();
+        code === 0 ? resolve(dist) : reject(msg);
       });
     });
   }
@@ -152,9 +172,9 @@ module.exports = class FastPreview {
     return streams[0];
   }
 
-  showSceneFrames(videoPath) {
-    console.log(`analyzing scene frames: ${videoPath}`);
-    const stream = this.showStreams(videoPath);
+  showSceneFrames() {
+    console.log(`analyzing scene frames: ${this.videoPath}`);
+    const stream = this.showStreams(this.videoPath);
     Bar.init(stream.duration_ts);
     let chunk = "";
     const probe = spawn(
@@ -197,13 +217,13 @@ module.exports = class FastPreview {
           Bar.end();
           code === 0 && resolve(data);
         } else {
-          this.showAllFrames(stream, videoPath).then(resolve).catch(reject);
+          this.showAllFrames(stream).then(resolve).catch(reject);
         }
       });
     });
   }
 
-  showAllFrames(stream, videoPath) {
+  showAllFrames(stream) {
     let chunk = "";
     const probe = spawn(
       this.ffprobe_path,
@@ -215,7 +235,7 @@ module.exports = class FastPreview {
         "v",
         "-of",
         "json",
-        videoPath,
+        this.videoPath,
       ],
       { encoding: "utf8" }
     );
@@ -373,7 +393,10 @@ module.exports = class FastPreview {
 
   transToWebp() {
     const mp4 = path.join(TEMP_PATH, `output.mp4`);
-    const webp = path.join(this.dist_path, `${this.filename}.webp`);
+    const webp = path.join(
+      this.dist_path,
+      `${path.basename(this.videoPath, ".mp4")}.webp`
+    );
     console.log(`creating webp: ${webp}`);
     const stream = this.showStreams(mp4);
     Bar.init(stream.nb_frames);
