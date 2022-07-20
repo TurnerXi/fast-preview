@@ -21,6 +21,8 @@
     "node": ">=0.8.0"
   },
   "devDependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^1.4.1",
     "typescript": "^4.7.4"
   }
 }
