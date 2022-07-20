@@ -10,11 +10,8 @@ const Bar = new ProgressBar();
 const CLIP_COUNT = 5;
 const CLIP_TIME = 5;
 const SPEED_MULTI = 2;
-const DEFAULT_DIST = process.cwd();
-const TEMP_PATH = path.join(
-  process.cwd(),
-  ".tmp" + String(Date.now()).substring(-10)
-);
+const DEFAULT_DIST = "buffer";
+const TEMP_PATH = path.join(process.cwd(), ".tmp");
 const CLIP_SELECT_STRATEGY = "max-size"; // max-size min-size random
 const CLIP_RANGE = [0.1, 0.9];
 const FPS_RATE = 10; // 'keep' number
@@ -29,7 +26,7 @@ module.exports = class FastPreview {
       clip_select_strategy: CLIP_SELECT_STRATEGY,
       clip_range: CLIP_RANGE,
       fps_rate: FPS_RATE,
-      dist_path: DEFAULT_DIST,
+      output: DEFAULT_DIST,
       speed_multi: SPEED_MULTI,
       width: DEFALUT_SIZE,
       height: DEFALUT_SIZE,
@@ -64,16 +61,18 @@ module.exports = class FastPreview {
     this.clip_count = options.clip_count || CLIP_COUNT;
     this.clip_time = options.clip_time || CLIP_TIME;
     this.fps_rate = options.fps_rate || FPS_RATE;
-    this.dist_path = options.dist_path || DEFAULT_DIST;
+    this.output = options.output || DEFAULT_DIST;
     this.width = options.width || DEFALUT_SIZE;
     this.height = options.height || DEFALUT_SIZE;
-    if (!fs.existsSync(this.dist_path)) {
-      fs.mkdirSync(this.dist_path, { recursive: true });
+    if (this.output !== "buffer" && !fs.existsSync(this.output)) {
+      fs.mkdirSync(this.output, { recursive: true });
     }
-    if (fs.existsSync(TEMP_PATH)) {
-      fs.rmdirSync(TEMP_PATH, { recursive: true });
+    this.tempDir = TEMP_PATH;
+    let idx = 0;
+    while (fs.existsSync(this.tempDir)) {
+      this.tempDir = path.join(process.cwd(), ".tmp" + idx++);
     }
-    fs.mkdirSync(TEMP_PATH, { recursive: true });
+    fs.mkdirSync(this.tempDir, { recursive: true });
   }
 
   async exec() {
@@ -95,15 +94,16 @@ module.exports = class FastPreview {
         })
       );
       await this.mergeClips(clips);
-      await this.transToWebp();
+      const ans = await this.transToWebp();
       this.clear();
+      return ans;
     } catch (e) {
       console.error(e);
     }
   }
 
   writeVideo(stream) {
-    const dist = path.join(TEMP_PATH, Date.now() + ".mp4");
+    const dist = path.join(this.tempDir, Date.now() + ".mp4");
     const writable = fs.createWriteStream(dist);
     stream.pipe(writable);
     return new Promise((resolve) => {
@@ -118,7 +118,7 @@ module.exports = class FastPreview {
     const stream = this.showStreams(this.videoPath);
     Bar.init(Number(stream.duration));
 
-    const dist = path.join(TEMP_PATH, Date.now() + ".mp4");
+    const dist = path.join(this.tempDir, Date.now() + ".mp4");
     let chunk = "";
     const params = [
       "-y",
@@ -316,7 +316,7 @@ module.exports = class FastPreview {
   }
 
   snapshot(index, start, dur) {
-    const dist = path.join(TEMP_PATH, `${leftPad(index, "0", 5)}.mp4`);
+    const dist = path.join(this.tempDir, `${leftPad(index, "0", 5)}.mp4`);
     console.log(`creating clip at ${start}: ${dist}`);
     Bar.init(dur);
     let chunk = "";
@@ -356,8 +356,8 @@ module.exports = class FastPreview {
   }
 
   mergeClips(clips) {
-    const outputTXTPath = path.join(TEMP_PATH, `/output.txt`);
-    const outputMP4Path = path.join(TEMP_PATH, `/output.mp4`);
+    const outputTXTPath = path.join(this.tempDir, `/output.txt`);
+    const outputMP4Path = path.join(this.tempDir, `/output.mp4`);
     fs.writeFileSync(
       outputTXTPath,
       clips.map((item) => `file '${item}'`).join("\r\n"),
@@ -392,9 +392,9 @@ module.exports = class FastPreview {
   }
 
   transToWebp() {
-    const mp4 = path.join(TEMP_PATH, `output.mp4`);
+    const mp4 = path.join(this.tempDir, `output.mp4`);
     const webp = path.join(
-      this.dist_path,
+      this.tempDir,
       `${path.basename(this.videoPath, ".mp4")}.webp`
     );
     console.log(`creating webp: ${webp}`);
@@ -439,13 +439,20 @@ module.exports = class FastPreview {
 
       result.on("close", (code) => {
         Bar.end();
-        code === 0 ? resolve() : reject();
+        let result;
+        if (this.output === "buffer") {
+          result = fs.readFileSync(webp);
+        } else {
+          result = path.join(this.output, path.basename(webp));
+          fs.renameSync(webp, result);
+        }
+        code === 0 ? resolve(result) : reject();
       });
     });
   }
 
   clear() {
-    fs.rmdirSync(TEMP_PATH, {
+    fs.rmdirSync(this.tempDir, {
       recursive: true,
       maxRetries: 5,
       retryDelay: 5000,

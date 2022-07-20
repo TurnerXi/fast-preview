@@ -10,7 +10,7 @@ declare class FastPreview {
       clip_select_strategy?: string;
       clip_range?: number[];
       fps_rate?: number;
-      dist_path?: any;
+      output?: string;
       speed_multi?: number;
       width?: number;
       height?: number;
@@ -27,14 +27,5 @@ declare class FastPreview {
   clip_time: number;
   fps_rate: number;
   dist_path: any;
-  exec(): Promise<void>;
-  showStreams(videoPath: any): any;
-  showSceneFrames(videoPath: any): any;
-  showAllFrames(stream: any, videoPath: any): any;
-  parseFrames(frames: any): Promise<any[]>;
-  searchFrames(frames: any): any[];
-  snapshot(index: any, start: any, dur: any): any;
-  mergeClips(clips: any): any;
-  transToWebp(): any;
-  clear(): void;
+  exec(): Promise<string | Buffer>;
 }
