@@ -34,6 +34,11 @@ module.exports = class ProgressBar {
     );
   }
 
+  end(){
+    process.stdout.clearLine();
+    process.stdout.cursorTo(0);
+  }
+
   get_bar(length, char, color = (a) => a) {
     let str = "";
     for (let i = 0; i < length; i++) {

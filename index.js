@@ -11,10 +11,14 @@ const CLIP_COUNT = 5;
 const CLIP_TIME = 5;
 const SPEED_MULTI = 2;
 const DEFAULT_DIST = process.cwd();
-const TEMP_PATH = path.join(process.cwd(), ".tmp");
+const TEMP_PATH = path.join(
+  process.cwd(),
+  ".tmp" + String(Date.now()).substring(-10)
+);
 const CLIP_SELECT_STRATEGY = "max-size"; // max-size min-size random
 const CLIP_RANGE = [0.1, 0.9];
 const FPS_RATE = 10; // 'keep' number
+const DEFALUT_SIZE = -1;
 
 module.exports = class FastPreview {
   constructor(
@@ -27,6 +31,8 @@ module.exports = class FastPreview {
       fps_rate: FPS_RATE,
       dist_path: DEFAULT_DIST,
       speed_multi: SPEED_MULTI,
+      width: DEFALUT_SIZE,
+      height: DEFALUT_SIZE,
     }
   ) {
     if (!FastPreview.ffmpeg_path) {
@@ -57,6 +63,8 @@ module.exports = class FastPreview {
     this.clip_time = options.clip_time || CLIP_TIME;
     this.fps_rate = options.fps_rate || FPS_RATE;
     this.dist_path = options.dist_path || DEFAULT_DIST;
+    this.width = options.width || DEFALUT_SIZE;
+    this.height = options.height || DEFALUT_SIZE;
     if (!fs.existsSync(this.dist_path)) {
       fs.mkdirSync(this.dist_path, { recursive: true });
     }
@@ -68,6 +76,9 @@ module.exports = class FastPreview {
 
   async exec() {
     try {
+      if (this.width !== DEFALUT_SIZE || this.height !== DEFALUT_SIZE) {
+        this.videoPath = await this.resizeVideo(this.videoPath);
+      }
       const data = await this.showSceneFrames(this.videoPath);
       const [start, end] = this.clip_range.map(
         (item) => item * data.stream.duration_ts
@@ -84,6 +95,39 @@ module.exports = class FastPreview {
     } catch (e) {
       console.error(e);
     }
+  }
+  resizeVideo(videoPath) {
+    console.log(`resize video: ${videoPath}`);
+    const stream = this.showStreams(videoPath);
+    Bar.init(Number(stream.duration));
+
+    const dist = path.join(TEMP_PATH, path.basename(videoPath));
+    let chunk = "";
+    const params = [
+      "-i",
+      videoPath,
+      "-vf",
+      `scale = ${this.width}: ${this.height}`
+    ];
+    const result = spawn(this.ffmpeg_path, params.concat([dist]), {
+      encoding: "utf8",
+    });
+    return new Promise((resolve, reject) => {
+      result.stderr.on("data", (data) => {
+        chunk += data;
+        const matched = chunk.match(/[\S\s]+time[\S\s]+?([\d\:]+)/);
+        if (matched && matched[1]) {
+          const time = matched[1];
+          const [hour, minute, second] = time.split(":");
+          Bar.update(hour * 360 + minute * 60 + Number(second));
+        }
+      });
+
+      result.on("close", (code) => {
+        Bar.end();
+        code === 0 ? resolve(dist) : reject();
+      });
+    });
   }
 
   showStreams(videoPath) {
@@ -150,7 +194,7 @@ module.exports = class FastPreview {
         const data = JSON.parse(chunk);
         if (data.frames.length > 0) {
           data.stream = stream;
-          code === 0 && Bar.update(stream.duration_ts);
+          Bar.end();
           code === 0 && resolve(data);
         } else {
           this.showAllFrames(stream, videoPath).then(resolve).catch(reject);
@@ -193,7 +237,7 @@ module.exports = class FastPreview {
       probe.on("close", (code) => {
         const data = JSON.parse(chunk);
         data.stream = stream;
-        code === 0 && Bar.update(stream.duration_ts);
+        Bar.end();
         code === 0 && resolve(data);
       });
     });
@@ -285,7 +329,7 @@ module.exports = class FastPreview {
       });
 
       result.on("close", (code) => {
-        code === 0 && Bar.update(dur);
+        Bar.end();
         code === 0 ? resolve(dist) : reject();
       });
     });
@@ -371,7 +415,7 @@ module.exports = class FastPreview {
       });
 
       result.on("close", (code) => {
-        code === 0 && Bar.update(stream.nb_frames);
+        Bar.end();
         code === 0 ? resolve() : reject();
       });
     });
