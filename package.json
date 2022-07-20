@@ -1,6 +1,6 @@
 {
   "name": "fast-preview",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "main": "index.js",
   "license": "MIT",
   "description": "A tool for generating thumbnail(animated webp) from a video",
@@ -19,5 +19,8 @@
   },
   "engines": {
     "node": ">=0.8.0"
+  },
+  "devDependencies": {
+    "typescript": "^4.7.4"
   }
 }
