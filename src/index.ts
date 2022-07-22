@@ -1,9 +1,9 @@
-const fs = require("fs");
-const path = require("path");
-const { spawn, spawnSync } = require("child_process");
-const { leftPad, escapePath } = require("./utils/string");
-const MaxHeap = require("./utils/max-heap");
-const ProgressBar = require("./utils/progress-bar");
+import { spawn, spawnSync } from "child_process";
+import fs, { ReadStream } from "fs";
+import path from "path";
+import MaxHeap from "./utils/max-heap";
+import ProgressBar from "./utils/progress-bar";
+import { escapePath, leftPad } from "./utils/string";
 
 const Bar = new ProgressBar();
 
@@ -17,32 +17,66 @@ const CLIP_RANGE = [0.1, 0.9];
 const FPS_RATE = 10; // 'keep' number
 const DEFALUT_SIZE = -1;
 
-module.exports = class FastPreview {
+const defaultOptions = {
+  clip_count: CLIP_COUNT,
+  clip_time: CLIP_TIME,
+  clip_select_strategy: CLIP_SELECT_STRATEGY,
+  clip_range: CLIP_RANGE,
+  fps_rate: FPS_RATE,
+  output: DEFAULT_DIST,
+  speed_multi: SPEED_MULTI,
+  width: DEFALUT_SIZE,
+  height: DEFALUT_SIZE,
+};
+
+export interface FastPreviewOptions {
+  clip_count?: number;
+  clip_time?: number;
+  clip_select_strategy?: string;
+  clip_range?: number[];
+  fps_rate?: number | string;
+  output?: string;
+  speed_multi?: number;
+  width?: number;
+  height?: number;
+}
+
+export default class FastPreview {
+  private static ffmpeg_path: string;
+  private static ffprobe_path: string;
+  private videoPath: string = "";
+  private tempDir: string;
+  private options: {
+    clip_count: number;
+    clip_time: number;
+    clip_select_strategy: string;
+    clip_range: number[];
+    fps_rate: number | string;
+    output: string;
+    speed_multi: number;
+    width: number;
+    height: number;
+  };
+
+  static setFfmpegPath(path: string) {
+    FastPreview.ffmpeg_path = path;
+  }
+  static setFfprobePath(path: string) {
+    FastPreview.ffprobe_path = path;
+  }
+
   constructor(
-    video,
-    options = {
-      clip_count: CLIP_COUNT,
-      clip_time: CLIP_TIME,
-      clip_select_strategy: CLIP_SELECT_STRATEGY,
-      clip_range: CLIP_RANGE,
-      fps_rate: FPS_RATE,
-      output: DEFAULT_DIST,
-      speed_multi: SPEED_MULTI,
-      width: DEFALUT_SIZE,
-      height: DEFALUT_SIZE,
-    }
+    readonly video: string | ReadStream,
+    options?: FastPreviewOptions
   ) {
     if (!FastPreview.ffmpeg_path) {
-      this.ffmpeg_path = process.env.FFMPEG_PATH || "ffmpeg";
-    } else {
-      this.ffmpeg_path = FastPreview.ffmpeg_path;
+      FastPreview.ffmpeg_path = process.env.FFMPEG_PATH || "ffmpeg";
     }
 
     if (!FastPreview.ffprobe_path) {
-      this.ffprobe_path = process.env.FFPROBE_PATH || "ffprobe";
-    } else {
-      this.ffprobe_path = FastPreview.ffprobe_path;
+      FastPreview.ffprobe_path = process.env.FFPROBE_PATH || "ffprobe";
     }
+
     if (video instanceof fs.ReadStream) {
       this.video = video;
     } else {
@@ -51,21 +85,16 @@ module.exports = class FastPreview {
     if (!this.video && !fs.existsSync(this.videoPath)) {
       throw new Error(`input video error`);
     }
-    this.clip_range =
-      options.clip_range && options.clip_range.length >= 2
-        ? options.clip_range
-        : CLIP_RANGE;
-    this.clip_select_strategy =
-      options.clip_select_strategy || CLIP_SELECT_STRATEGY;
-    this.speed_multi = options.speed_multi || SPEED_MULTI;
-    this.clip_count = options.clip_count || CLIP_COUNT;
-    this.clip_time = options.clip_time || CLIP_TIME;
-    this.fps_rate = options.fps_rate || FPS_RATE;
-    this.output = options.output || DEFAULT_DIST;
-    this.width = options.width || DEFALUT_SIZE;
-    this.height = options.height || DEFALUT_SIZE;
-    if (this.output !== "buffer" && !fs.existsSync(this.output)) {
-      fs.mkdirSync(this.output, { recursive: true });
+    this.options = Object.assign({}, defaultOptions, options);
+    // this.clip_range =
+    //   options.clip_range && options.clip_range.length >= 2
+    //     ? options.clip_range
+    //     : CLIP_RANGE;
+    if (
+      this.options.output !== "buffer" &&
+      !fs.existsSync(this.options.output)
+    ) {
+      fs.mkdirSync(this.options.output, { recursive: true });
     }
     this.tempDir = TEMP_PATH;
     let idx = 0;
@@ -77,18 +106,21 @@ module.exports = class FastPreview {
 
   async exec() {
     try {
-      if (this.video) {
+      if (typeof this.video !== "string") {
         this.videoPath = await this.writeVideo(this.video);
       }
-      if (this.width !== DEFALUT_SIZE || this.height !== DEFALUT_SIZE) {
+      if (
+        this.options.width !== DEFALUT_SIZE ||
+        this.options.height !== DEFALUT_SIZE
+      ) {
         await this.resizeVideo();
       }
       const data = await this.showSceneFrames();
-      const [start, end] = this.clip_range.map(
+      const [start, end] = this.options.clip_range.map(
         (item) => item * data.stream.duration_ts
       );
       const clips = await this.parseFrames(
-        data.frames.filter((item) => {
+        data.frames.filter((item: any) => {
           const pkt_frame = item.pkt_pts || item.pkt_dts;
           return pkt_frame >= start && pkt_frame <= end;
         })
@@ -102,7 +134,7 @@ module.exports = class FastPreview {
     }
   }
 
-  writeVideo(stream) {
+  writeVideo(stream: ReadStream): Promise<string> {
     const dist = path.join(this.tempDir, Date.now() + ".mp4");
     const writable = fs.createWriteStream(dist);
     stream.pipe(writable);
@@ -125,11 +157,9 @@ module.exports = class FastPreview {
       "-i",
       this.videoPath,
       "-vf",
-      `scale = ${this.width}: ${this.height}`,
+      `scale = ${this.options.width}: ${this.options.height}`,
     ];
-    const result = spawn(this.ffmpeg_path, params.concat([dist]), {
-      encoding: "utf8",
-    });
+    const result = spawn(FastPreview.ffmpeg_path, params.concat([dist]));
     return new Promise((resolve, reject) => {
       result.stderr.on("data", (data) => {
         chunk += data;
@@ -137,7 +167,7 @@ module.exports = class FastPreview {
         if (matched && matched[1]) {
           const time = matched[1];
           const [hour, minute, second] = time.split(":");
-          Bar.update(hour * 360 + minute * 60 + Number(second));
+          Bar.update(Number(hour) * 360 + Number(minute) * 60 + Number(second));
         }
       });
 
@@ -150,9 +180,9 @@ module.exports = class FastPreview {
     });
   }
 
-  showStreams(videoPath) {
+  showStreams(videoPath: string) {
     const result = spawnSync(
-      this.ffprobe_path,
+      FastPreview.ffprobe_path,
       [
         "-v",
         "quiet",
@@ -172,29 +202,23 @@ module.exports = class FastPreview {
     return streams[0];
   }
 
-  showSceneFrames() {
+  showSceneFrames(): Promise<any> {
     console.log(`analyzing scene frames: ${this.videoPath}`);
     const stream = this.showStreams(this.videoPath);
     Bar.init(stream.duration_ts);
     let chunk = "";
-    const probe = spawn(
-      this.ffprobe_path,
-      [
-        "-v",
-        "quiet",
-        "-show_frames",
-        "-select_streams",
-        "v",
-        "-of",
-        "json",
-        "-f",
-        "lavfi",
-        `movie='${escapePath(this.videoPath)}',select='gt(scene\,.4)'`,
-      ],
-      {
-        encoding: "utf8",
-      }
-    );
+    const probe = spawn(FastPreview.ffprobe_path, [
+      "-v",
+      "quiet",
+      "-show_frames",
+      "-select_streams",
+      "v",
+      "-of",
+      "json",
+      "-f",
+      "lavfi",
+      `movie='${escapePath(this.videoPath)}',select='gt(scene\,.4)'`,
+    ]);
     return new Promise((resolve, reject) => {
       probe.stdout.on("data", (data) => {
         chunk += data;
@@ -223,22 +247,18 @@ module.exports = class FastPreview {
     });
   }
 
-  showAllFrames(stream) {
+  showAllFrames(stream: any) {
     let chunk = "";
-    const probe = spawn(
-      this.ffprobe_path,
-      [
-        "-v",
-        "quiet",
-        "-show_frames",
-        "-select_streams",
-        "v",
-        "-of",
-        "json",
-        this.videoPath,
-      ],
-      { encoding: "utf8" }
-    );
+    const probe = spawn(FastPreview.ffprobe_path, [
+      "-v",
+      "quiet",
+      "-show_frames",
+      "-select_streams",
+      "v",
+      "-of",
+      "json",
+      this.videoPath,
+    ]);
     return new Promise((resolve, reject) => {
       probe.stdout.on("data", (data) => {
         chunk += data;
@@ -263,7 +283,7 @@ module.exports = class FastPreview {
     });
   }
 
-  async parseFrames(frames) {
+  async parseFrames(frames: any[]) {
     const clips = [];
     frames = this.searchFrames(frames);
     for (let index = 0; index < frames.length; index++) {
@@ -271,42 +291,48 @@ module.exports = class FastPreview {
         await this.snapshot(
           index,
           Number(frames[index].pkt_pts_time || frames[index].pkt_dts_time),
-          this.clip_time
+          this.options.clip_time
         )
       );
     }
     return clips;
   }
 
-  searchFrames(frames) {
-    let temp = [];
+  searchFrames(frames: any[]) {
+    let temp: any[] = [];
 
-    const hasRepeatClip = (target) =>
+    const hasRepeatClip = (target: any) =>
       temp.findIndex(
         (item) =>
           Math.abs(
             Number(target.pkt_pts_time || target.pkt_dts_time) -
               Number(item.pkt_pts_time || item.pkt_dts_time)
-          ) < this.clip_time
+          ) < this.options.clip_time
       ) === -1;
 
-    if (this.clip_select_strategy === "min-size") {
-      const heap = new MaxHeap(frames, (a, b) => b.pkt_size - a.pkt_size);
-      while (heap.size() > 0 && temp.length < this.clip_count) {
+    if (this.options.clip_select_strategy === "min-size") {
+      const heap = new MaxHeap(
+        frames,
+        (a: any, b: any) => b.pkt_size - a.pkt_size
+      );
+      while (heap.size() > 0 && temp.length < this.options.clip_count) {
         const target = heap.pop();
         if (hasRepeatClip(target)) temp.push(target);
       }
-    } else if (this.clip_select_strategy === "random") {
+    } else if (this.options.clip_select_strategy === "random") {
       frames = [...frames];
-      while (frames.length > 0 && temp.length < this.clip_count) {
+      while (frames.length > 0 && temp.length < this.options.clip_count) {
         const index = Math.floor(Math.random() * frames.length);
         const target = frames[index];
         if (hasRepeatClip(target)) temp.push(target);
         frames.splice(index, 1);
       }
     } else {
-      const heap = new MaxHeap(frames, (a, b) => a.pkt_size - b.pkt_size);
-      while (heap.size() > 0 && temp.length < this.clip_count) {
+      const heap = new MaxHeap(
+        frames,
+        (a: any, b: any) => a.pkt_size - b.pkt_size
+      );
+      while (heap.size() > 0 && temp.length < this.options.clip_count) {
         const target = heap.pop();
         if (hasRepeatClip(target)) temp.push(target);
       }
@@ -315,12 +341,12 @@ module.exports = class FastPreview {
     return temp;
   }
 
-  snapshot(index, start, dur) {
+  snapshot(index: number, start: number, dur: number) {
     const dist = path.join(this.tempDir, `${leftPad(index, "0", 5)}.mp4`);
     console.log(`creating clip at ${start}: ${dist}`);
     Bar.init(dur);
     let chunk = "";
-    const params = [
+    const params: any[] = [
       "-ss",
       start,
       "-t",
@@ -329,14 +355,15 @@ module.exports = class FastPreview {
       this.videoPath,
       "-an",
       "-filter:v",
-      `setpts=${1 / this.speed_multi}*PTS`,
+      `setpts=${1 / this.options.speed_multi}*PTS`,
     ];
-    if (this.fps_rate !== "keep" && typeof this.fps_rate === "number") {
-      params.push(...["-r", this.fps_rate]);
+    if (
+      this.options.fps_rate !== "keep" &&
+      typeof this.options.fps_rate === "number"
+    ) {
+      params.push(...["-r", this.options.fps_rate]);
     }
-    const result = spawn(this.ffmpeg_path, params.concat([dist]), {
-      encoding: "utf8",
-    });
+    const result = spawn(FastPreview.ffmpeg_path, params.concat([dist]));
     return new Promise((resolve, reject) => {
       result.stderr.on("data", (data) => {
         chunk += data;
@@ -344,7 +371,7 @@ module.exports = class FastPreview {
         if (matched && matched[1]) {
           const time = matched[1];
           const [hour, minute, second] = time.split(":");
-          Bar.update(hour * 360 + minute * 60 + Number(second));
+          Bar.update(Number(hour) * 360 + Number(minute) * 60 + Number(second));
         }
       });
 
@@ -355,7 +382,7 @@ module.exports = class FastPreview {
     });
   }
 
-  mergeClips(clips) {
+  mergeClips(clips: any[]): Promise<void> {
     const outputTXTPath = path.join(this.tempDir, `/output.txt`);
     const outputMP4Path = path.join(this.tempDir, `/output.mp4`);
     fs.writeFileSync(
@@ -363,23 +390,19 @@ module.exports = class FastPreview {
       clips.map((item) => `file '${item}'`).join("\r\n"),
       { encoding: "utf8" }
     );
-    const result = spawn(
-      this.ffmpeg_path,
-      [
-        "-v",
-        "quiet",
-        "-safe",
-        "0",
-        "-f",
-        "concat",
-        "-i",
-        outputTXTPath,
-        "-c",
-        "copy",
-        outputMP4Path,
-      ],
-      { encoding: "utf8" }
-    );
+    const result = spawn(FastPreview.ffmpeg_path, [
+      "-v",
+      "quiet",
+      "-safe",
+      "0",
+      "-f",
+      "concat",
+      "-i",
+      outputTXTPath,
+      "-c",
+      "copy",
+      outputMP4Path,
+    ]);
     return new Promise((resolve, reject) => {
       result.stderr.on("data", (data) => {
         console.error(`stderr: ${data}`);
@@ -401,35 +424,31 @@ module.exports = class FastPreview {
     const stream = this.showStreams(mp4);
     Bar.init(stream.nb_frames);
     return new Promise((resolve, reject) => {
-      const result = spawn(
-        this.ffmpeg_path,
-        [
-          "-i",
-          mp4,
-          "-vcodec",
-          "libwebp",
-          "-filter:v",
-          "fps=fps=20",
-          "-lossless",
-          "0",
-          "-compression_level",
-          "3",
-          "-q:v",
-          "70",
-          "-loop",
-          "0",
-          "-preset",
-          "picture",
-          "-an",
-          "-vsync",
-          "0",
-          "-vf",
-          "scale = 320:180:force_original_aspect_ratio = decrease,pad = 320:180:(ow-iw)/2:(oh-ih)/2",
-          "-y",
-          webp,
-        ],
-        { encoding: "utf8" }
-      );
+      const result = spawn(FastPreview.ffmpeg_path, [
+        "-i",
+        mp4,
+        "-vcodec",
+        "libwebp",
+        "-filter:v",
+        "fps=fps=20",
+        "-lossless",
+        "0",
+        "-compression_level",
+        "3",
+        "-q:v",
+        "70",
+        "-loop",
+        "0",
+        "-preset",
+        "picture",
+        "-an",
+        "-vsync",
+        "0",
+        "-vf",
+        "scale = 320:180:force_original_aspect_ratio = decrease,pad = 320:180:(ow-iw)/2:(oh-ih)/2",
+        "-y",
+        webp,
+      ]);
       result.stderr.on("data", (data) => {
         const matched = data.toString().match(/^[\S\s]*frame=\s*(\d+)/);
         if (matched && matched[1]) {
@@ -440,10 +459,10 @@ module.exports = class FastPreview {
       result.on("close", (code) => {
         Bar.end();
         let result;
-        if (this.output === "buffer") {
+        if (this.options.output === "buffer") {
           result = fs.readFileSync(webp);
         } else {
-          result = path.join(this.output, path.basename(webp));
+          result = path.join(this.options.output, path.basename(webp));
           fs.renameSync(webp, result);
         }
         code === 0 ? resolve(result) : reject();
@@ -458,14 +477,7 @@ module.exports = class FastPreview {
       retryDelay: 5000,
     });
   }
-
-  static setFfmpegPath(path) {
-    FastPreview.ffmpeg_path = path;
-  }
-  static setFfprobePath(path) {
-    FastPreview.ffprobe_path = path;
-  }
-};
+}
 
 // frames
 // "codec_type": "video",
