@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "child_process";
-import fs, { ReadStream } from "fs";
-import path, { dirname } from "path";
+import fs, { copyFileSync, ReadStream } from "fs";
+import path from "path";
 import MaxHeap from "./utils/max-heap";
 import ProgressBar from "./utils/progress-bar";
 import { escapePath, leftPad } from "./utils/string";
@@ -94,7 +94,7 @@ export default class FastPreview {
       this.options.output !== "buffer" &&
       !fs.existsSync(this.options.output)
     ) {
-      fs.mkdirSync(dirname(this.options.output), { recursive: true });
+      fs.mkdirSync(this.options.output, { recursive: true });
     }
     this.tempDir = TEMP_PATH;
     let idx = 0;
@@ -463,7 +463,7 @@ export default class FastPreview {
           result = fs.readFileSync(webp);
         } else {
           result = path.join(this.options.output, path.basename(webp));
-          fs.renameSync(webp, result);
+          copyFileSync(webp, result);
         }
         code === 0 ? resolve(result) : reject();
       });
