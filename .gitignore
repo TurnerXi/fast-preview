@@ -3,4 +3,4 @@
 build/
 node_modules/
 yarn-error.log
-/*.mp4
+testvideo.*
