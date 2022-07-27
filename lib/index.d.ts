@@ -6,11 +6,15 @@ export interface FastPreviewOptions {
     clip_select_strategy?: string;
     clip_range?: number[];
     fps_rate?: number | string;
-    output?: string;
+    output?: OutputOptions;
     speed_multi?: number;
     width?: number;
     height?: number;
     log?: boolean;
+}
+export interface OutputOptions {
+    type: "dir" | "file" | "buffer";
+    path: string;
 }
 export default class FastPreview {
     readonly video: string | ReadStream;

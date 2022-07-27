@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "child_process";
 import fs, { copyFileSync, ReadStream } from "fs";
-import path from "path";
+import path, { dirname } from "path";
 import MaxHeap from "./utils/max-heap";
 import ProgressBar from "./utils/progress-bar";
 import { escapePath, leftPad } from "./utils/string";
@@ -10,7 +10,6 @@ const Bar = new ProgressBar();
 const CLIP_COUNT = 5;
 const CLIP_TIME = 5;
 const SPEED_MULTI = 2;
-const DEFAULT_DIST = "buffer";
 const TEMP_PATH = path.join(process.cwd(), ".tmp");
 const CLIP_SELECT_STRATEGY = "max-size"; // max-size min-size random
 const CLIP_RANGE = [0.1, 0.9];
@@ -23,7 +22,7 @@ const defaultOptions = {
   clip_select_strategy: CLIP_SELECT_STRATEGY,
   clip_range: CLIP_RANGE,
   fps_rate: FPS_RATE,
-  output: DEFAULT_DIST,
+  output: { type: "buffer" },
   speed_multi: SPEED_MULTI,
   width: DEFALUT_SIZE,
   height: DEFALUT_SIZE,
@@ -36,11 +35,16 @@ export interface FastPreviewOptions {
   clip_select_strategy?: string;
   clip_range?: number[];
   fps_rate?: number | string;
-  output?: string;
+  output?: OutputOptions;
   speed_multi?: number;
   width?: number;
   height?: number;
   log?: boolean;
+}
+
+export interface OutputOptions {
+  type: "dir" | "file" | "buffer";
+  path: string;
 }
 
 export default class FastPreview {
@@ -54,7 +58,7 @@ export default class FastPreview {
     clip_select_strategy: string;
     clip_range: number[];
     fps_rate: number | string;
-    output: string;
+    output: OutputOptions;
     speed_multi: number;
     width: number;
     height: number;
@@ -95,10 +99,15 @@ export default class FastPreview {
     //     ? options.clip_range
     //     : CLIP_RANGE;
     if (
-      this.options.output !== "buffer" &&
-      !fs.existsSync(this.options.output)
+      this.options.output.type === "dir" &&
+      !fs.existsSync(this.options.output.path)
     ) {
-      fs.mkdirSync(this.options.output, { recursive: true });
+      fs.mkdirSync(this.options.output.path, { recursive: true });
+    } else if (
+      this.options.output.type === "file" &&
+      !fs.existsSync(dirname(this.options.output.path))
+    ) {
+      fs.mkdirSync(dirname(this.options.output.path), { recursive: true });
     }
     this.tempDir = TEMP_PATH;
     let idx = 0;
@@ -463,11 +472,14 @@ export default class FastPreview {
       result.on("close", (code) => {
         Bar.end();
         let result;
-        if (this.options.output === "buffer") {
-          result = fs.readFileSync(webp);
-        } else {
-          result = path.join(this.options.output, path.basename(webp));
+        const { output } = this.options;
+        if (output.type === "file") {
+          copyFileSync(webp, output.path);
+        } else if (output.type === "dir") {
+          result = path.join(output.path, path.basename(webp));
           copyFileSync(webp, result);
+        } else {
+          result = fs.readFileSync(webp);
         }
         code === 0 ? resolve(result) : reject();
       });
