@@ -27,6 +27,7 @@ const defaultOptions = {
   speed_multi: SPEED_MULTI,
   width: DEFALUT_SIZE,
   height: DEFALUT_SIZE,
+  log: true,
 };
 
 export interface FastPreviewOptions {
@@ -39,6 +40,7 @@ export interface FastPreviewOptions {
   speed_multi?: number;
   width?: number;
   height?: number;
+  log?: boolean;
 }
 
 export default class FastPreview {
@@ -56,6 +58,7 @@ export default class FastPreview {
     speed_multi: number;
     width: number;
     height: number;
+    log: boolean;
   };
 
   static setFfmpegPath(path: string) {
@@ -86,6 +89,7 @@ export default class FastPreview {
       throw new Error(`input video error`);
     }
     this.options = Object.assign({}, defaultOptions, options);
+    ProgressBar.isShow = this.options.log;
     // this.clip_range =
     //   options.clip_range && options.clip_range.length >= 2
     //     ? options.clip_range

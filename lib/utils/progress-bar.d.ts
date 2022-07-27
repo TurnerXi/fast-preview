@@ -1,4 +1,5 @@
 export default class ProgressBar {
+    static isShow: boolean;
     bar_length: number;
     total: number;
     current: number;

@@ -1,6 +1,7 @@
 const { bgWhite } = require("chalk");
 
 export default class ProgressBar {
+  static isShow: boolean = true;
   bar_length: number;
   total: number = 0;
   current: number = 0;
@@ -17,7 +18,7 @@ export default class ProgressBar {
   update(current: number) {
     this.current = current;
     const current_progress = this.current / this.total;
-    this.draw(current_progress);
+    ProgressBar.isShow && this.draw(current_progress);
   }
 
   draw(current_progress: number) {
@@ -36,8 +37,10 @@ export default class ProgressBar {
   }
 
   end() {
-    process.stdout.clearLine(0);
-    process.stdout.cursorTo(0);
+    if (ProgressBar.isShow) {
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+    }
   }
 
   get_bar(length: number, char: string, color = (a: string) => a) {

@@ -10,6 +10,7 @@ export interface FastPreviewOptions {
     speed_multi?: number;
     width?: number;
     height?: number;
+    log?: boolean;
 }
 export default class FastPreview {
     readonly video: string | ReadStream;
