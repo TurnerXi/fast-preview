@@ -1,17 +1,10 @@
 #!/usr/bin/env node
-const { path: ffmpeg_path } = require("@ffmpeg-installer/ffmpeg");
-const { path: ffprobe_path } = require("@ffprobe-installer/ffprobe");
 const { dirname } = require("path");
-const chalk = require("chalk");
 const program = require("commander");
-const FastPreview = require("../lib").default;
+const FastPreview = require("fast-preview").default;
 const { Option } = program;
 
-FastPreview.setFfmpegPath(ffmpeg_path);
-FastPreview.setFfprobePath(ffprobe_path);
-
 program
-  .version(`fpreview ${require("../package").version}`)
   .argument("<files...>")
   .addOption(
     new Option("-c, --clip-count <number>", "设置要截取的视频片段的数量")

@@ -1,0 +1,37 @@
+{
+  "name": "fast-preview-cli",
+  "version": "1.2.3",
+  "description": "A cli tool for generating thumbnail(animated webp) from a video",
+  "author": "TurnerXi <silencetheseyears@foxmail.com>",
+  "homepage": "https://github.com/TurnerXi/fast-preview#readme",
+  "license": "MIT",
+  "keywords": [
+    "ffmpeg",
+    "animated webp",
+    "thumbnail"
+  ],
+  "bin": {
+    "fpreview": "./bin/cli.js"
+  },
+  "directories": {
+    "bin": "bin"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TurnerXi/fast-preview.git"
+  },
+  "scripts": {
+    "test": "echo \"Error: run tests from root\" && exit 1"
+  },
+  "bugs": {
+    "mail": "silencetheseyears@foxmail.com",
+    "url": "https://github.com/TurnerXi/fast-preview/issues"
+  },
+  "engines": {
+    "node": ">=0.8.0"
+  },
+  "dependencies": {
+    "commander": "^9.4.0",
+    "fast-preview": "^1.2.3"
+  }
+}

@@ -1,0 +1,6 @@
+.history
+.tmp
+build/
+node_modules/
+yarn-error.log
+testvideo.*

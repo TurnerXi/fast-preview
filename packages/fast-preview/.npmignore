@@ -1,0 +1,6 @@
+demo
+.history
+.tmp
+build/
+node_modules/
+testvideo.*

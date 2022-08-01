@@ -1,45 +1,7 @@
 {
-  "name": "fast-preview",
-  "version": "1.2.0",
-  "main": "./lib/index.js",
-  "license": "MIT",
-  "description": "A tool for generating thumbnail(animated webp) from a video",
-  "keywords": [
-    "ffmpeg",
-    "animated webp",
-    "thumbnail"
-  ],
-  "files": [
-    "./lib",
-    "./bin"
-  ],
-  "bin": {
-    "fpreview": "./bin/cli.js"
-  },
-  "scripts": {
-    "build": "tsc"
-  },
-  "author": "TurnerXi <silencetheseyears@foxmail.com>",
-  "bugs": {
-    "mail": "silencetheseyears@foxmail.com",
-    "url": "https://github.com/TurnerXi/fast-preview/issues"
-  },
-  "dependencies": {
-    "chalk": "^4.1.2"
-  },
-  "engines": {
-    "node": ">=0.8.0"
-  },
+  "name": "root",
+  "private": true,
   "devDependencies": {
-    "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "@ffprobe-installer/ffprobe": "^1.4.1",
-    "@types/node": "^18.0.6",
-    "@typescript-eslint/eslint-plugin": "^5.30.7",
-    "@typescript-eslint/parser": "^5.30.7",
-    "commander": "^9.4.0",
-    "eslint": "^8.20.0",
-    "eslint-plugin-node": "^11.1.0",
-    "minimist": "^1.2.6",
-    "typescript": "^4.7.4"
+    "lerna": "^5.0.0"
   }
 }

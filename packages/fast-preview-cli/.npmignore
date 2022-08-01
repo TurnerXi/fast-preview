@@ -3,3 +3,4 @@ demo
 .tmp
 build/
 node_modules/
+testvideo.*
