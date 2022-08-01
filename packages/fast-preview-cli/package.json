@@ -1,6 +1,6 @@
 {
   "name": "fast-preview-cli",
-  "version": "0.0.1",
+  "version": "1.2.4",
   "description": "A cli tool for generating thumbnail(animated webp) from a video",
   "author": "TurnerXi <silencetheseyears@foxmail.com>",
   "homepage": "https://github.com/TurnerXi/fast-preview#readme",
