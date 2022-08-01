@@ -13,7 +13,7 @@ const SPEED_MULTI = 2;
 const TEMP_PATH = path.join(process.cwd(), ".tmp");
 const CLIP_SELECT_STRATEGY = "max-size"; // max-size min-size random
 const CLIP_RANGE = [0.1, 0.9];
-const FPS_RATE = 10; // 'keep' number
+const FPS_RATE = -1; // number
 const DEFALUT_SIZE = -1;
 
 const defaultOptions = {
@@ -34,7 +34,7 @@ export interface FastPreviewOptions {
   clip_time?: number;
   clip_select_strategy?: string;
   clip_range?: number[];
-  fps_rate?: number | string;
+  fps_rate?: number;
   output?: OutputOptions;
   speed_multi?: number;
   width?: number;
@@ -57,7 +57,7 @@ export default class FastPreview {
     clip_time: number;
     clip_select_strategy: string;
     clip_range: number[];
-    fps_rate: number | string;
+    fps_rate: number;
     output: OutputOptions;
     speed_multi: number;
     width: number;
@@ -65,10 +65,10 @@ export default class FastPreview {
     log: boolean;
   };
 
-  static setFfmpegPath(path: string) {
+  public static setFfmpegPath(path: string) {
     FastPreview.ffmpeg_path = path;
   }
-  static setFfprobePath(path: string) {
+  public static setFfprobePath(path: string) {
     FastPreview.ffprobe_path = path;
   }
 
@@ -370,10 +370,7 @@ export default class FastPreview {
       "-filter:v",
       `setpts=${1 / this.options.speed_multi}*PTS`,
     ];
-    if (
-      this.options.fps_rate !== "keep" &&
-      typeof this.options.fps_rate === "number"
-    ) {
+    if (this.options.fps_rate > 0) {
       params.push(...["-r", this.options.fps_rate]);
     }
     const result = spawn(FastPreview.ffmpeg_path, params.concat([dist]));

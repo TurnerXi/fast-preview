@@ -1,7 +1,7 @@
 const { path: ffmpeg_path } = require("@ffmpeg-installer/ffmpeg");
 const { path: ffprobe_path } = require("@ffprobe-installer/ffprobe");
 const path = require("path");
-const FastPreview = require("../index");
+const FastPreview = require("../lib").default;
 const fs = require("fs");
 
 FastPreview.setFfmpegPath(ffmpeg_path);

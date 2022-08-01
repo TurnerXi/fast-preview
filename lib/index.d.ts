@@ -5,7 +5,7 @@ export interface FastPreviewOptions {
     clip_time?: number;
     clip_select_strategy?: string;
     clip_range?: number[];
-    fps_rate?: number | string;
+    fps_rate?: number;
     output?: OutputOptions;
     speed_multi?: number;
     width?: number;

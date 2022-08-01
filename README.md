@@ -17,6 +17,12 @@ Ffmpeg.setFfprobePath(path) 参数 path 是一个字符串，其中包含 ffprob
 
 > 您也可以使用@ffmpeg-installer/ffmpeg和@ffprobe-installer/ffprobe，它们会自动下载您所在平台的ffmpeg和ffprobe并为您提供路径，详请见[demo/ffmpeg-installer.js](https://github.com/TurnerXi/fast-preview/blob/main/demo/ffmpeg-installer.js)
 
+## CLI
+```sh
+$ npm install fast-preview
+$ fpreview /path/to/video.mp4
+```
+
 ## 安装
 
 ```sh
@@ -28,7 +34,7 @@ $ npm install fast-preview
 fast-preview 模块返回一个构造器，你需要实例化并传入要转换的视频（目前支持 MP4 格式）, 并使用实例调用 exec 方法
 
 ```js
-var FastPreview = require('fast-preview')
+var FastPreview = require('fast-preview').default
 var preview = new FastPreview('video.mp4')
 preview.exec()
 ```
@@ -42,8 +48,11 @@ var preview = new FastPreview('video.mp4',{
   clip_time: 5,
   clip_select_strategy: 'max-size', // max-size min-size random
   clip_range: [0.1,0.9],
-  fps_rate: 10, // number 'keep'(default)
-  output: 'buffer', // string 'buffer'(default)
+  fps_rate: 10, // number -1(default)
+  output: {
+    type: 'buffer' // 'buffer'(default) 'file' 'dir'
+    path?: ''      // 输出类型不是buffer时需要传入文件或目录的路径
+  },
   speed_multi: 2,
   width: 320, // number -1(default) 
   height: -1  // number -1(default)
@@ -57,7 +66,7 @@ preview.exec()
 - `clip_time`: 每个片段持续时间(秒)
 - `clip_select_strategy`: 片段选择策略
 - `clip_range`: 片段选择范围(视频时间的百分比)
-- `fps_rate`: 图像帧率(keep: 保持原视频帧率)
+- `fps_rate`: 图像帧率(-1: 保持原视频帧率)
 - `speed_multi`: 片段播放速度的倍数
 - `output`: 动态预览图生成的路径或buffer
 - `width`: 视频缩放宽度, 默认-1(按高度等比缩放)
