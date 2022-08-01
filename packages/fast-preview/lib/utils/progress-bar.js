@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const { bgWhite } = require("chalk");
+var readline = require("readline");
 class ProgressBar {
     constructor() {
         this.total = 0;
@@ -23,14 +24,14 @@ class ProgressBar {
         const filled_bar = this.get_bar(filled_bar_length, " ", bgWhite);
         const empty_bar = this.get_bar(empty_bar_length, "-");
         const percentage_progress = (current_progress * 100).toFixed(2);
-        process.stdout.clearLine(0);
-        process.stdout.cursorTo(0);
+        readline.clearLine(process.stdout, 0);
+        readline.cursorTo(process.stdout, 0, 0);
         process.stdout.write(`Current progress: [${filled_bar}${empty_bar}] | ${percentage_progress}%`);
     }
     end() {
         if (ProgressBar.isShow) {
-            process.stdout.clearLine(0);
-            process.stdout.cursorTo(0);
+            readline.clearLine(process.stdout, 0);
+            readline.cursorTo(process.stdout, 0, 0);
         }
     }
     get_bar(length, char, color = (a) => a) {
