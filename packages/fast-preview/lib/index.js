@@ -126,11 +126,13 @@ class FastPreview {
                 }));
                 yield this.mergeClips(clips);
                 const ans = yield this.transToWebp();
-                this.clear();
                 return ans;
             }
             catch (e) {
                 console.error(e);
+            }
+            finally {
+                this.clear();
             }
         });
     }
@@ -431,7 +433,7 @@ class FastPreview {
         });
     }
     clear() {
-        fs_1.default.rmdirSync(this.tempDir, {
+        fs_1.default.rmSync(this.tempDir, {
             recursive: true,
             maxRetries: 5,
             retryDelay: 5000,

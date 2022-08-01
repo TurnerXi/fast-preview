@@ -140,10 +140,11 @@ export default class FastPreview {
       );
       await this.mergeClips(clips);
       const ans = await this.transToWebp();
-      this.clear();
       return ans;
     } catch (e) {
       console.error(e);
+    } finally {
+      this.clear();
     }
   }
 
@@ -484,7 +485,7 @@ export default class FastPreview {
   }
 
   clear() {
-    fs.rmdirSync(this.tempDir, {
+    fs.rmSync(this.tempDir, {
       recursive: true,
       maxRetries: 5,
       retryDelay: 5000,
