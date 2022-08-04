@@ -157,7 +157,7 @@ class FastPreview {
             "-i",
             this.videoPath,
             "-vf",
-            `scale = ${this.options.width}: ${this.options.height}`,
+            `scale = ${this.options.width}: ${this.options.height}:force_original_aspect_ratio = decrease,pad = ${this.options.width}:${this.options.height}:(ow-iw)/2:(oh-ih)/2`,
         ];
         const result = (0, child_process_1.spawn)(FastPreview.ffmpeg_path, params.concat([dist]));
         return new Promise((resolve, reject) => {
@@ -403,8 +403,6 @@ class FastPreview {
                 "-an",
                 "-vsync",
                 "0",
-                "-vf",
-                "scale = 320:180:force_original_aspect_ratio = decrease,pad = 320:180:(ow-iw)/2:(oh-ih)/2",
                 "-y",
                 webp,
             ]);
