@@ -119,19 +119,21 @@ export default class FastPreview {
   }
 
   async exec() {
-    this.hasGPU = true;
-    const rst = spawnSync("nvidia-smi", ["-L"], { encoding: "utf8" });
-    if (rst.error) {
-      this.hasGPU = false;
-    }
-    const rst1 = spawnSync(
-      `${FastPreview.ffmpeg_path} -codecs -hide_banner|grep libwebp`,
-      { encoding: "utf8" }
-    );
-    if (!rst1) {
-      throw new Error("please enable libwebp");
-    }
     try {
+      this.hasGPU = true;
+      const rst = spawnSync("nvidia-smi", ["-L"], { encoding: "utf8" });
+      if (rst.error) {
+        this.hasGPU = false;
+      }
+
+      const rst1 = spawnSync(
+        `${FastPreview.ffmpeg_path} -codecs -hide_banner|grep libwebp`,
+        { encoding: "utf8" }
+      );
+      if (!rst1) {
+        throw new Error("please enable libwebp");
+      }
+
       if (typeof this.video !== "string") {
         this.videoPath = await this.writeVideo(this.video);
       }
