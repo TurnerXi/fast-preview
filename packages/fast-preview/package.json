@@ -10,7 +10,6 @@
     "thumbnail"
   ],
   "files": [
-    "./lib",
     "./bin"
   ],
   "scripts": {

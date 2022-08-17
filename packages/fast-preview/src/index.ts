@@ -52,6 +52,7 @@ export default class FastPreview {
   private static ffprobe_path: string;
   private videoPath: string = "";
   private tempDir: string;
+  private hasGPU: boolean = true;
   private options: {
     clip_count: number;
     clip_time: number;
@@ -118,6 +119,11 @@ export default class FastPreview {
   }
 
   async exec() {
+    this.hasGPU = true;
+    const rst = spawnSync("nvidia-smi", ["-L"], { encoding: "utf8" });
+    if (rst.error) {
+      this.hasGPU = false;
+    }
     try {
       if (typeof this.video !== "string") {
         this.videoPath = await this.writeVideo(this.video);
@@ -142,7 +148,7 @@ export default class FastPreview {
       const ans = await this.transToWebp();
       return ans;
     } catch (e) {
-      console.error(e);
+      console.error("failed: " + e);
     } finally {
       this.clear();
     }
@@ -165,15 +171,24 @@ export default class FastPreview {
     Bar.init(Number(stream.duration));
 
     const dist = path.join(this.tempDir, Date.now() + ".mp4");
-    let chunk = "";
-    const params = [
-      "-y",
-      "-i",
-      this.videoPath,
-      "-vf",
-      `scale = ${this.options.width}: ${this.options.height}:force_original_aspect_ratio = decrease,pad = ${this.options.width}:${this.options.height}:(ow-iw)/2:(oh-ih)/2`,
-    ];
+
+    let filter = "";
+    if (this.hasGPU) {
+      filter += "fade,hwupload_cuda,scale_npp";
+    } else {
+      filter += "scale";
+    }
+    filter += `=${this.options.width}:${this.options.height}`;
+    if (
+      this.options.width !== DEFALUT_SIZE &&
+      this.options.height !== DEFALUT_SIZE
+    ) {
+      filter += `:force_original_aspect_ratio=decrease,pad=${this.options.width}:${this.options.height}:(ow-iw)/2:(oh-ih)/2`;
+    }
+
+    const params = ["-y", "-i", this.videoPath, "-vf", filter];
     const result = spawn(FastPreview.ffmpeg_path, params.concat([dist]));
+    let chunk = "";
     return new Promise((resolve, reject) => {
       result.stderr.on("data", (data) => {
         chunk += data;
@@ -195,6 +210,7 @@ export default class FastPreview {
   }
 
   showStreams(videoPath: string) {
+    console.log(FastPreview.ffprobe_path)
     const result = spawnSync(
       FastPreview.ffprobe_path,
       [

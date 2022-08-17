@@ -1,6 +1,7 @@
 .history
-.tmp
+.tmp*
 build/
 node_modules/
 yarn-error.log
-testvideo.*
+input.mp4
+input.webp

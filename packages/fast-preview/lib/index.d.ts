@@ -22,6 +22,7 @@ export default class FastPreview {
     private static ffprobe_path;
     private videoPath;
     private tempDir;
+    private hasGPU;
     private options;
     static setFfmpegPath(path: string): void;
     static setFfprobePath(path: string): void;

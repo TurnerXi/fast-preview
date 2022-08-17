@@ -1,4 +1,2 @@
 const FastPreview = require("../lib").default;
-new FastPreview("testvideo.mp4", { output: process.cwd() })
-  .exec()
-  .then(console.log);
+new FastPreview("input.mp4", { width: 320 }).exec().then(console.log);

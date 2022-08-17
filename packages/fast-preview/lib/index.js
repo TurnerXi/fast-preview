@@ -66,6 +66,7 @@ class FastPreview {
     constructor(video, options) {
         this.video = video;
         this.videoPath = "";
+        this.hasGPU = true;
         if (!FastPreview.ffmpeg_path) {
             FastPreview.ffmpeg_path = process.env.FFMPEG_PATH || "ffmpeg";
         }
@@ -110,6 +111,11 @@ class FastPreview {
     }
     exec() {
         return __awaiter(this, void 0, void 0, function* () {
+            this.hasGPU = true;
+            const rst = (0, child_process_1.spawnSync)("nvidia-smi", ["-L"], { encoding: "utf8" });
+            if (rst.error) {
+                this.hasGPU = false;
+            }
             try {
                 if (typeof this.video !== "string") {
                     this.videoPath = yield this.writeVideo(this.video);
@@ -129,7 +135,7 @@ class FastPreview {
                 return ans;
             }
             catch (e) {
-                console.error(e);
+                console.error("failed: " + e);
             }
             finally {
                 this.clear();
@@ -151,15 +157,21 @@ class FastPreview {
         const stream = this.showStreams(this.videoPath);
         Bar.init(Number(stream.duration));
         const dist = path_1.default.join(this.tempDir, Date.now() + ".mp4");
-        let chunk = "";
-        const params = [
-            "-y",
-            "-i",
-            this.videoPath,
-            "-vf",
-            `scale = ${this.options.width}: ${this.options.height}:force_original_aspect_ratio = decrease,pad = ${this.options.width}:${this.options.height}:(ow-iw)/2:(oh-ih)/2`,
-        ];
+        let filter = "";
+        if (this.hasGPU) {
+            filter += "fade,hwupload_cuda,scale_npp";
+        }
+        else {
+            filter += "scale";
+        }
+        filter += `=${this.options.width}:${this.options.height}`;
+        if (this.options.width !== DEFALUT_SIZE &&
+            this.options.height !== DEFALUT_SIZE) {
+            filter += `:force_original_aspect_ratio=decrease,pad=${this.options.width}:${this.options.height}:(ow-iw)/2:(oh-ih)/2`;
+        }
+        const params = ["-y", "-i", this.videoPath, "-vf", filter];
         const result = (0, child_process_1.spawn)(FastPreview.ffmpeg_path, params.concat([dist]));
+        let chunk = "";
         return new Promise((resolve, reject) => {
             result.stderr.on("data", (data) => {
                 chunk += data;
@@ -179,6 +191,7 @@ class FastPreview {
         });
     }
     showStreams(videoPath) {
+        console.log(FastPreview.ffprobe_path);
         const result = (0, child_process_1.spawnSync)(FastPreview.ffprobe_path, [
             "-v",
             "quiet",
