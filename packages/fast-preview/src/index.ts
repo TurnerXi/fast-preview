@@ -124,6 +124,13 @@ export default class FastPreview {
     if (rst.error) {
       this.hasGPU = false;
     }
+    const rst1 = spawnSync(
+      `${FastPreview.ffmpeg_path} -codecs -hide_banner|grep libwebp`,
+      { encoding: "utf8" }
+    );
+    if (!rst1) {
+      throw new Error("please enable libwebp");
+    }
     try {
       if (typeof this.video !== "string") {
         this.videoPath = await this.writeVideo(this.video);
@@ -210,7 +217,6 @@ export default class FastPreview {
   }
 
   showStreams(videoPath: string) {
-    console.log(FastPreview.ffprobe_path)
     const result = spawnSync(
       FastPreview.ffprobe_path,
       [
@@ -384,8 +390,10 @@ export default class FastPreview {
       "-i",
       this.videoPath,
       "-an",
-      "-filter:v",
-      `setpts=${1 / this.options.speed_multi}*PTS`,
+      "-vf",
+      `${this.hasGPU ? "hwupload_cuda," : ""}setpts=${
+        1 / this.options.speed_multi
+      }*PTS`,
     ];
     if (this.options.fps_rate > 0) {
       params.push(...["-r", this.options.fps_rate]);
@@ -456,8 +464,8 @@ export default class FastPreview {
         mp4,
         "-vcodec",
         "libwebp",
-        "-filter:v",
-        "fps=fps=20",
+        "-vf",
+        `${this.hasGPU ? "hwupload_cuda," : ""}fps=fps=20`,
         "-lossless",
         "0",
         "-compression_level",
@@ -485,15 +493,19 @@ export default class FastPreview {
         Bar.end();
         let result;
         const { output } = this.options;
-        if (output.type === "file") {
-          copyFileSync(webp, output.path);
-        } else if (output.type === "dir") {
-          result = path.join(output.path, path.basename(webp));
-          copyFileSync(webp, result);
-        } else {
-          result = fs.readFileSync(webp);
+        try {
+          if (output.type === "file") {
+            copyFileSync(webp, output.path);
+          } else if (output.type === "dir") {
+            result = path.join(output.path, path.basename(webp));
+            copyFileSync(webp, result);
+          } else {
+            result = fs.readFileSync(webp);
+          }
+          code === 0 ? resolve(result) : reject();
+        } catch (e) {
+          reject();
         }
-        code === 0 ? resolve(result) : reject();
       });
     });
   }

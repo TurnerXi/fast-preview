@@ -116,6 +116,10 @@ class FastPreview {
             if (rst.error) {
                 this.hasGPU = false;
             }
+            const rst1 = (0, child_process_1.spawnSync)(`${FastPreview.ffmpeg_path} -codecs -hide_banner|grep libwebp`, { encoding: "utf8" });
+            if (!rst1) {
+                throw new Error("please enable libwebp");
+            }
             try {
                 if (typeof this.video !== "string") {
                     this.videoPath = yield this.writeVideo(this.video);
@@ -191,7 +195,6 @@ class FastPreview {
         });
     }
     showStreams(videoPath) {
-        console.log(FastPreview.ffprobe_path);
         const result = (0, child_process_1.spawnSync)(FastPreview.ffprobe_path, [
             "-v",
             "quiet",
@@ -340,8 +343,8 @@ class FastPreview {
             "-i",
             this.videoPath,
             "-an",
-            "-filter:v",
-            `setpts=${1 / this.options.speed_multi}*PTS`,
+            "-vf",
+            `${this.hasGPU ? "hwupload_cuda," : ""}setpts=${1 / this.options.speed_multi}*PTS`,
         ];
         if (this.options.fps_rate > 0) {
             params.push(...["-r", this.options.fps_rate]);
@@ -401,8 +404,8 @@ class FastPreview {
                 mp4,
                 "-vcodec",
                 "libwebp",
-                "-filter:v",
-                "fps=fps=20",
+                "-vf",
+                `${this.hasGPU ? "hwupload_cuda," : ""}fps=fps=20`,
                 "-lossless",
                 "0",
                 "-compression_level",
@@ -429,17 +432,22 @@ class FastPreview {
                 Bar.end();
                 let result;
                 const { output } = this.options;
-                if (output.type === "file") {
-                    (0, fs_1.copyFileSync)(webp, output.path);
+                try {
+                    if (output.type === "file") {
+                        (0, fs_1.copyFileSync)(webp, output.path);
+                    }
+                    else if (output.type === "dir") {
+                        result = path_1.default.join(output.path, path_1.default.basename(webp));
+                        (0, fs_1.copyFileSync)(webp, result);
+                    }
+                    else {
+                        result = fs_1.default.readFileSync(webp);
+                    }
+                    code === 0 ? resolve(result) : reject();
                 }
-                else if (output.type === "dir") {
-                    result = path_1.default.join(output.path, path_1.default.basename(webp));
-                    (0, fs_1.copyFileSync)(webp, result);
+                catch (e) {
+                    reject();
                 }
-                else {
-                    result = fs_1.default.readFileSync(webp);
-                }
-                code === 0 ? resolve(result) : reject();
             });
         });
     }
