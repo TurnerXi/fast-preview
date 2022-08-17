@@ -1,6 +1,6 @@
 {
   "name": "fast-preview",
-  "version": "1.2.15",
+  "version": "1.2.13",
   "main": "./lib/index.js",
   "license": "MIT",
   "description": "A tool for generating thumbnail(animated webp) from a video",
@@ -10,7 +10,7 @@
     "thumbnail"
   ],
   "files": [
-    "./bin"
+    "./lib"
   ],
   "scripts": {
     "build": "tsc"
@@ -35,5 +35,6 @@
     "eslint": "^8.20.0",
     "eslint-plugin-node": "^11.1.0",
     "typescript": "^4.7.4"
-  }
+  },
+  "gitHead": "f520a11cb727da47ab42a38105257c0b2178aa37"
 }
