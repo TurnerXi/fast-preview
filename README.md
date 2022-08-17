@@ -7,7 +7,7 @@
 ## CLI
 
 ```sh
-$ npm install -g fast-preview
+$ npm install -g fast-preview-cli
 $ fpreview /path/to/video.mp4
 ```
 
