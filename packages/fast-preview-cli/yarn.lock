@@ -34,10 +34,10 @@ commander@^9.4.0:
   resolved "https://registry.yarnpkg.com/commander/-/commander-9.4.0.tgz#bc4a40918fefe52e22450c111ecd6b7acce6f11c"
   integrity sha512-sRPT+umqkz90UA8M1yqYfnHlZA7fF6nSphDtxeywPZ49ysjxDQybzk13CL+mXekDRG92skbcqCLVovuCusNmFw==
 
-fast-preview@^1.2.15:
-  version "1.2.15"
-  resolved "https://registry.yarnpkg.com/fast-preview/-/fast-preview-1.2.15.tgz#973be3f6c399a6f353083450e122cc0ff62c6783"
-  integrity sha512-nQUvK6dNCHXGQe6L8jpM7/c07r7X3Os05blo/ITmvjHaGYc7JTUjOTJvKPs36F49FuIkpSzYl9lYGfKV68eywA==
+fast-preview@1.2.16:
+  version "1.2.16"
+  resolved "https://registry.yarnpkg.com/fast-preview/-/fast-preview-1.2.16.tgz#f3240f2c7da7b850ea6de15630d0b48ff8b3ba3a"
+  integrity sha512-9Hjq4M4/BynqXLOW9WcwqoIx+CRuDZXjOy9tr0sErsn5kr2ETD2kHgPXElWleQadpB075Lgp10PwBtlgnmIExQ==
   dependencies:
     chalk "^4.1.2"
 
