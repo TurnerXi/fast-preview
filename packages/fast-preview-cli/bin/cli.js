@@ -55,23 +55,28 @@ program
     ).default(-1)
   )
   .action(async function (files, options) {
-    for (const file of files) {
-      const preview = new FastPreview(file, {
-        clip_count: options.clipCount,
-        clip_time: options.clipTime,
-        clip_select_strategy: options.clipStrategy,
-        clip_range: options.clipRange,
-        fps_rate: options.fpsRate,
-        output: {
-          type: "dir",
-          path: options.output || dirname(file),
-        },
-        speed_multi: options.speedMulti,
-        width: options.width,
-        height: options.height,
-        log: true,
-      });
-      await preview.exec();
+    try {
+      for (const file of files) {
+        const preview = new FastPreview(file, {
+          clip_count: options.clipCount,
+          clip_time: options.clipTime,
+          clip_select_strategy: options.clipStrategy,
+          clip_range: options.clipRange,
+          fps_rate: options.fpsRate,
+          output: {
+            type: "dir",
+            path: options.output || dirname(file),
+          },
+          speed_multi: options.speedMulti,
+          width: options.width,
+          height: options.height,
+          log: true,
+        });
+
+        await preview.exec();
+      }
+    } catch (e) {
+      console.error("failed: " + e);
     }
   });
 
