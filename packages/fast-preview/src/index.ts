@@ -156,8 +156,8 @@ export default class FastPreview {
       await this.mergeClips(clips);
       const ans = await this.transToWebp();
       return ans;
-    } catch (e) {
-      console.error("failed: " + e);
+    } catch (e: any) {
+      console.error("failed: " + e.stack);
     } finally {
       this.clear();
     }
