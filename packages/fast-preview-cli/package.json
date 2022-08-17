@@ -32,6 +32,6 @@
   },
   "dependencies": {
     "commander": "^9.4.0",
-    "fast-preview": "^1.2.14"
+    "fast-preview": "^1.2.15"
   }
 }
