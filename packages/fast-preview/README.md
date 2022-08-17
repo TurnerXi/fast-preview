@@ -16,14 +16,6 @@ $ fpreview /path/to/video.mp4
 fast-preview 需要安装 ffmpeg 才能工作。
 如果设置了 FFMPEG_PATH 环境变量, fast-preview 将使用它作为 ffmpeg 可执行文件的完整路径。否则，它将尝试直接调用 ffmpeg（因此它应该在您的 PATH 中）。您还必须安装 ffprobe（在大多数发行版中它带有 ffmpeg）。同样，如果设置了 FFPROBE_PATH 环境变量，fast-preview 将使用它，否则它将尝试在 PATH 中调用它。
 
-#### 手动设置二进制路径
-
-或者，您可以使用以下 API 命令手动设置 ffmpeg、ffprobe 二进制路径：
-Ffmpeg.setFfmpegPath(path) 参数 path 是一个字符串，其中包含 ffmpeg 二进制文件的完整路径。
-Ffmpeg.setFfprobePath(path) 参数 path 是一个字符串，其中包含 ffprobe 二进制文件的完整路径。
-
-> 您也可以使用@ffmpeg-installer/ffmpeg 和@ffprobe-installer/ffprobe，它们会自动下载您所在平台的 ffmpeg 和 ffprobe 并为您提供路径，详请见[demo/ffmpeg-installer.js](https://github.com/TurnerXi/fast-preview/blob/main/demo/ffmpeg-installer.js)
-
 ## 安装
 
 ```sh
