@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "child_process";
-import fs, { copyFileSync, ReadStream } from "fs";
+import fs, { ReadStream } from "fs";
+import { copyFile, readFile, rm } from "fs/promises";
 import path, { dirname } from "path";
 import MaxHeap from "./utils/max-heap";
 import ProgressBar from "./utils/progress-bar";
@@ -52,7 +53,7 @@ export default class FastPreview {
   private static ffprobe_path: string;
   private videoPath: string = "";
   private tempDir: string;
-  private hasGPU: boolean = true;
+  private canMixAccel: boolean = true;
   private options: {
     clip_count: number;
     clip_time: number;
@@ -118,20 +119,52 @@ export default class FastPreview {
     fs.mkdirSync(this.tempDir, { recursive: true });
   }
 
+  checkHasGPU() {
+    const rst = spawnSync("nvidia-smi", ["-L"], { encoding: "utf8" });
+    return !!rst.stdout;
+  }
+
+  checkHasLibwebp() {
+    const rst = spawnSync(
+      `${FastPreview.ffmpeg_path}`,
+      ["-hide_banner", "-codecs"],
+      { encoding: "utf8" }
+    );
+    return rst.stdout.indexOf("libwebp") > -1;
+  }
+
+  checkHasCuda() {
+    const rst = spawnSync(
+      `${FastPreview.ffmpeg_path}`,
+      ["-hide_banner", "-hwaccels"],
+      { encoding: "utf8" }
+    );
+    return rst.stdout.indexOf("cuda") > -1;
+  }
+
+  checkHasScalenpp() {
+    const rst = spawnSync(
+      `${FastPreview.ffmpeg_path}`,
+      ["-hide_banner", "-filters"],
+      { encoding: "utf8" }
+    );
+    return rst.stdout.indexOf("scale_npp") > -1;
+  }
+
   async exec() {
     try {
-      this.hasGPU = true;
-      const rst = spawnSync("nvidia-smi", ["-L"], { encoding: "utf8" });
-      if (rst.error) {
-        this.hasGPU = false;
+      if (!this.checkHasLibwebp()) {
+        throw new Error("please enable libwebp");
       }
 
-      const rst1 = spawnSync(
-        `${FastPreview.ffmpeg_path} -codecs -hide_banner|grep libwebp`,
-        { encoding: "utf8" }
-      );
-      if (!rst1) {
-        throw new Error("please enable libwebp");
+      if (
+        !this.checkHasGPU() ||
+        !this.checkHasCuda() ||
+        !this.checkHasScalenpp()
+      ) {
+        this.canMixAccel = false;
+        console.log("can`t do mix acceleration");
+        throw new Error("ttt");
       }
 
       if (typeof this.video !== "string") {
@@ -157,9 +190,9 @@ export default class FastPreview {
       const ans = await this.transToWebp();
       return ans;
     } catch (e: any) {
-      console.error("failed: " + e.stack);
+      console.error("failed: " + e);
     } finally {
-      this.clear();
+      await this.clear();
     }
   }
 
@@ -182,12 +215,11 @@ export default class FastPreview {
     const dist = path.join(this.tempDir, Date.now() + ".mp4");
 
     let filter = "";
-    if (this.hasGPU) {
-      filter += "fade,hwupload_cuda,scale_npp";
+    if (this.canMixAccel) {
+      filter += `fade,hwupload_cuda,scale_npp=${this.options.width}:${this.options.height}:interp_algo=super`;
     } else {
-      filter += "scale";
+      filter += `scale=${this.options.width}:${this.options.height}`;
     }
-    filter += `=${this.options.width}:${this.options.height}`;
     if (
       this.options.width !== DEFALUT_SIZE &&
       this.options.height !== DEFALUT_SIZE
@@ -195,9 +227,22 @@ export default class FastPreview {
       filter += `:force_original_aspect_ratio=decrease,pad=${this.options.width}:${this.options.height}:(ow-iw)/2:(oh-ih)/2`;
     }
 
-    const params = ["-y", "-i", this.videoPath, "-vf", filter];
-    const result = spawn(FastPreview.ffmpeg_path, params.concat([dist]));
+    const params = [
+      "-hide_banner",
+      "-vsync",
+      "0",
+      "-c:v",
+      "h264_cuvid",
+      "-i",
+      this.videoPath,
+      "-vf",
+      filter,
+      "-y",
+      "-c:v",
+      "h264_nvenc",
+    ];
     let chunk = "";
+    const result = spawn(FastPreview.ffmpeg_path, params.concat([dist]));
     return new Promise((resolve, reject) => {
       result.stderr.on("data", (data) => {
         chunk += data;
@@ -210,10 +255,163 @@ export default class FastPreview {
       });
 
       result.on("close", (code, msg) => {
-        fs.rmSync(this.videoPath);
-        fs.renameSync(dist, this.videoPath);
         Bar.end();
-        code === 0 ? resolve(dist) : reject(msg);
+        code === 0 ? resolve(dist) : reject(chunk);
+      });
+    });
+  }
+
+  snapshot(index: number, start: number, dur: number) {
+    const dist = path.join(this.tempDir, `${leftPad(index, "0", 5)}.mp4`);
+    console.log(`creating clip at ${start}: ${dist}`);
+    Bar.init(dur);
+    const params: any[] = [
+      "-ss",
+      start,
+      "-t",
+      dur,
+      "-i",
+      this.videoPath,
+      "-an",
+      "-vf",
+      `setpts=${1 / this.options.speed_multi}*PTS`,
+    ];
+    if (this.options.fps_rate > 0) {
+      params.push(...["-r", this.options.fps_rate]);
+    }
+    const result = spawn(FastPreview.ffmpeg_path, params.concat([dist]));
+    return new Promise((resolve, reject) => {
+      let chunk = "";
+      let error = "";
+      result.stdout.on("data", (data) => {
+        chunk += data;
+        const matched = chunk.match(/[\S\s]+time[\S\s]+?([\d\:]+)/);
+        if (matched && matched[1]) {
+          const time = matched[1];
+          const [hour, minute, second] = time.split(":");
+          Bar.update(Number(hour) * 360 + Number(minute) * 60 + Number(second));
+        }
+      });
+
+      result.stderr.on("data", (data) => {
+        error += data;
+      });
+
+      result.on("close", (code) => {
+        Bar.end();
+        if (code !== 0) {
+          reject(error);
+        } else {
+          resolve(dist);
+        }
+      });
+    });
+  }
+
+  mergeClips(clips: any[]): Promise<void> {
+    const outputTXTPath = path.join(this.tempDir, `/output.txt`);
+    const outputMP4Path = path.join(this.tempDir, `/output.mp4`);
+    fs.writeFileSync(
+      outputTXTPath,
+      clips.map((item) => `file '${item}'`).join("\r\n"),
+      { encoding: "utf8" }
+    );
+    const result = spawn(FastPreview.ffmpeg_path, [
+      "-v",
+      "quiet",
+      "-safe",
+      "0",
+      "-f",
+      "concat",
+      "-i",
+      outputTXTPath,
+      "-c",
+      "copy",
+      outputMP4Path,
+    ]);
+    return new Promise((resolve, reject) => {
+      let error = "";
+      result.stderr.on("data", (data) => {
+        error += data;
+      });
+      result.on("close", (code) => {
+        if (code !== 0) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
+  transToWebp() {
+    const mp4 = path.join(this.tempDir, `output.mp4`);
+    const webp = path.join(
+      this.tempDir,
+      `${path.basename(this.videoPath, ".mp4")}.webp`
+    );
+    console.log(`creating webp: ${webp}`);
+    const stream = this.showStreams(mp4);
+    return new Promise((resolve, reject) => {
+      if (!stream) {
+        reject("input has no streams");
+        return;
+      }
+      Bar.init(stream.nb_frames);
+      const params = [
+        "-i",
+        mp4,
+        "-vcodec",
+        "libwebp",
+        "-vf",
+        `fps=fps=20`,
+        "-lossless",
+        "0",
+        "-compression_level",
+        "3",
+        "-q:v",
+        "70",
+        "-loop",
+        "0",
+        "-preset",
+        "picture",
+        "-an",
+        "-vsync",
+        "0",
+        "-y",
+        webp,
+      ];
+      const result = spawn(FastPreview.ffmpeg_path, params);
+      let error = "";
+      result.stderr.on("data", (data) => {
+        error += data;
+        const matched = data.toString().match(/^[\S\s]*frame=\s*(\d+)/);
+        if (matched && matched[1]) {
+          Bar.update(Number(matched[1]));
+        }
+      });
+
+      result.on("close", async (code) => {
+        Bar.end();
+        let result;
+        if (code !== 0) {
+          reject(error);
+        } else {
+          const { output } = this.options;
+          try {
+            if (output.type === "file") {
+              await copyFile(webp, output.path);
+            } else if (output.type === "dir") {
+              result = path.join(output.path, path.basename(webp));
+              await copyFile(webp, result);
+            } else {
+              result = await readFile(webp);
+            }
+            resolve(result);
+          } catch (e) {
+            reject(e);
+          }
+        }
       });
     });
   }
@@ -237,7 +435,7 @@ export default class FastPreview {
       console.error(result.stderr);
     }
     const { streams } = JSON.parse(result.stdout);
-    return streams[0];
+    return streams.length > 0 ? streams[0] : null;
   }
 
   showSceneFrames(): Promise<any> {
@@ -245,6 +443,7 @@ export default class FastPreview {
     const stream = this.showStreams(this.videoPath);
     Bar.init(stream.duration_ts);
     let chunk = "";
+    let error = "";
     const probe = spawn(FastPreview.ffprobe_path, [
       "-v",
       "quiet",
@@ -268,18 +467,22 @@ export default class FastPreview {
       });
 
       probe.stderr.on("data", (data) => {
-        console.error(`stderr: ${data}`);
-        reject(data);
+        error += data;
       });
 
       probe.on("close", (code) => {
-        const data = JSON.parse(chunk);
-        if (data.frames.length > 0) {
-          data.stream = stream;
+        if (code !== 0) {
           Bar.end();
-          code === 0 && resolve(data);
+          reject(error);
         } else {
-          this.showAllFrames(stream).then(resolve).catch(reject);
+          const data = JSON.parse(chunk);
+          if (data.frames.length > 0) {
+            data.stream = stream;
+            Bar.end();
+            resolve(data);
+          } else {
+            this.showAllFrames(stream).then(resolve).catch(reject);
+          }
         }
       });
     });
@@ -287,6 +490,7 @@ export default class FastPreview {
 
   showAllFrames(stream: any) {
     let chunk = "";
+    let error = "";
     const probe = spawn(FastPreview.ffprobe_path, [
       "-v",
       "quiet",
@@ -308,15 +512,18 @@ export default class FastPreview {
       });
 
       probe.stderr.on("data", (data) => {
-        console.error(`stderr: ${data}`);
-        reject(data);
+        error += data;
       });
 
       probe.on("close", (code) => {
-        const data = JSON.parse(chunk);
-        data.stream = stream;
         Bar.end();
-        code === 0 && resolve(data);
+        if (code !== 0) {
+          reject(error);
+        } else {
+          const data = JSON.parse(chunk);
+          data.stream = stream;
+          resolve(data);
+        }
       });
     });
   }
@@ -379,141 +586,8 @@ export default class FastPreview {
     return temp;
   }
 
-  snapshot(index: number, start: number, dur: number) {
-    const dist = path.join(this.tempDir, `${leftPad(index, "0", 5)}.mp4`);
-    console.log(`creating clip at ${start}: ${dist}`);
-    Bar.init(dur);
-    let chunk = "";
-    const params: any[] = [
-      "-ss",
-      start,
-      "-t",
-      dur,
-      "-i",
-      this.videoPath,
-      "-an",
-      "-vf",
-      `${this.hasGPU ? "hwupload_cuda," : ""}setpts=${
-        1 / this.options.speed_multi
-      }*PTS`,
-    ];
-    if (this.options.fps_rate > 0) {
-      params.push(...["-r", this.options.fps_rate]);
-    }
-    const result = spawn(FastPreview.ffmpeg_path, params.concat([dist]));
-    return new Promise((resolve, reject) => {
-      result.stderr.on("data", (data) => {
-        chunk += data;
-        const matched = chunk.match(/[\S\s]+time[\S\s]+?([\d\:]+)/);
-        if (matched && matched[1]) {
-          const time = matched[1];
-          const [hour, minute, second] = time.split(":");
-          Bar.update(Number(hour) * 360 + Number(minute) * 60 + Number(second));
-        }
-      });
-
-      result.on("close", (code) => {
-        Bar.end();
-        code === 0 ? resolve(dist) : reject();
-      });
-    });
-  }
-
-  mergeClips(clips: any[]): Promise<void> {
-    const outputTXTPath = path.join(this.tempDir, `/output.txt`);
-    const outputMP4Path = path.join(this.tempDir, `/output.mp4`);
-    fs.writeFileSync(
-      outputTXTPath,
-      clips.map((item) => `file '${item}'`).join("\r\n"),
-      { encoding: "utf8" }
-    );
-    const result = spawn(FastPreview.ffmpeg_path, [
-      "-v",
-      "quiet",
-      "-safe",
-      "0",
-      "-f",
-      "concat",
-      "-i",
-      outputTXTPath,
-      "-c",
-      "copy",
-      outputMP4Path,
-    ]);
-    return new Promise((resolve, reject) => {
-      result.stderr.on("data", (data) => {
-        console.error(`stderr: ${data}`);
-      });
-
-      result.on("close", (code) => {
-        code === 0 ? resolve() : reject();
-      });
-    });
-  }
-
-  transToWebp() {
-    const mp4 = path.join(this.tempDir, `output.mp4`);
-    const webp = path.join(
-      this.tempDir,
-      `${path.basename(this.videoPath, ".mp4")}.webp`
-    );
-    console.log(`creating webp: ${webp}`);
-    const stream = this.showStreams(mp4);
-    Bar.init(stream.nb_frames);
-    return new Promise((resolve, reject) => {
-      const result = spawn(FastPreview.ffmpeg_path, [
-        "-i",
-        mp4,
-        "-vcodec",
-        "libwebp",
-        "-vf",
-        `${this.hasGPU ? "hwupload_cuda," : ""}fps=fps=20`,
-        "-lossless",
-        "0",
-        "-compression_level",
-        "3",
-        "-q:v",
-        "70",
-        "-loop",
-        "0",
-        "-preset",
-        "picture",
-        "-an",
-        "-vsync",
-        "0",
-        "-y",
-        webp,
-      ]);
-      result.stderr.on("data", (data) => {
-        const matched = data.toString().match(/^[\S\s]*frame=\s*(\d+)/);
-        if (matched && matched[1]) {
-          Bar.update(Number(matched[1]));
-        }
-      });
-
-      result.on("close", (code) => {
-        Bar.end();
-        let result;
-        const { output } = this.options;
-        try {
-          if (output.type === "file") {
-            copyFileSync(webp, output.path);
-          } else if (output.type === "dir") {
-            result = path.join(output.path, path.basename(webp));
-            copyFileSync(webp, result);
-          } else {
-            result = fs.readFileSync(webp);
-          }
-          code === 0 ? resolve(result) : reject();
-        } catch (e) {
-          reject();
-        }
-      });
-    });
-  }
-
-  clear() {
-    fs.rmSync(this.tempDir, {
+  async clear() {
+    await rm(this.tempDir, {
       recursive: true,
       maxRetries: 5,
       retryDelay: 5000,

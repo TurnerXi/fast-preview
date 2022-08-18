@@ -36,7 +36,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const child_process_1 = require("child_process");
-const fs_1 = __importStar(require("fs"));
+const fs_1 = __importDefault(require("fs"));
+const promises_1 = require("fs/promises");
 const path_1 = __importStar(require("path"));
 const max_heap_1 = __importDefault(require("./utils/max-heap"));
 const progress_bar_1 = __importDefault(require("./utils/progress-bar"));
@@ -66,7 +67,7 @@ class FastPreview {
     constructor(video, options) {
         this.video = video;
         this.videoPath = "";
-        this.hasGPU = true;
+        this.canMixAccel = true;
         if (!FastPreview.ffmpeg_path) {
             FastPreview.ffmpeg_path = process.env.FFMPEG_PATH || "ffmpeg";
         }
@@ -109,18 +110,35 @@ class FastPreview {
     static setFfprobePath(path) {
         FastPreview.ffprobe_path = path;
     }
+    checkHasGPU() {
+        const rst = (0, child_process_1.spawnSync)("nvidia-smi", ["-L"], { encoding: "utf8" });
+        return !!rst.stdout;
+    }
+    checkHasLibwebp() {
+        const rst = (0, child_process_1.spawnSync)(`${FastPreview.ffmpeg_path}`, ["-hide_banner", "-codecs"], { encoding: "utf8" });
+        return rst.stdout.indexOf("libwebp") > -1;
+    }
+    checkHasCuda() {
+        const rst = (0, child_process_1.spawnSync)(`${FastPreview.ffmpeg_path}`, ["-hide_banner", "-hwaccels"], { encoding: "utf8" });
+        return rst.stdout.indexOf("cuda") > -1;
+    }
+    checkHasScalenpp() {
+        const rst = (0, child_process_1.spawnSync)(`${FastPreview.ffmpeg_path}`, ["-hide_banner", "-filters"], { encoding: "utf8" });
+        return rst.stdout.indexOf("scale_npp") > -1;
+    }
     exec() {
         return __awaiter(this, void 0, void 0, function* () {
-            this.hasGPU = true;
-            const rst = (0, child_process_1.spawnSync)("nvidia-smi", ["-L"], { encoding: "utf8" });
-            if (rst.error) {
-                this.hasGPU = false;
-            }
-            const rst1 = (0, child_process_1.spawnSync)(`${FastPreview.ffmpeg_path} -codecs -hide_banner|grep libwebp`, { encoding: "utf8" });
-            if (!rst1) {
-                throw new Error("please enable libwebp");
-            }
             try {
+                if (!this.checkHasLibwebp()) {
+                    throw new Error("please enable libwebp");
+                }
+                if (!this.checkHasGPU() ||
+                    !this.checkHasCuda() ||
+                    !this.checkHasScalenpp()) {
+                    this.canMixAccel = false;
+                    console.log("can`t do mix acceleration");
+                    throw new Error("ttt");
+                }
                 if (typeof this.video !== "string") {
                     this.videoPath = yield this.writeVideo(this.video);
                 }
@@ -142,7 +160,7 @@ class FastPreview {
                 console.error("failed: " + e);
             }
             finally {
-                this.clear();
+                yield this.clear();
             }
         });
     }
@@ -162,20 +180,32 @@ class FastPreview {
         Bar.init(Number(stream.duration));
         const dist = path_1.default.join(this.tempDir, Date.now() + ".mp4");
         let filter = "";
-        if (this.hasGPU) {
-            filter += "fade,hwupload_cuda,scale_npp";
+        if (this.canMixAccel) {
+            filter += `fade,hwupload_cuda,scale_npp=${this.options.width}:${this.options.height}:interp_algo=super`;
         }
         else {
-            filter += "scale";
+            filter += `scale=${this.options.width}:${this.options.height}`;
         }
-        filter += `=${this.options.width}:${this.options.height}`;
         if (this.options.width !== DEFALUT_SIZE &&
             this.options.height !== DEFALUT_SIZE) {
             filter += `:force_original_aspect_ratio=decrease,pad=${this.options.width}:${this.options.height}:(ow-iw)/2:(oh-ih)/2`;
         }
-        const params = ["-y", "-i", this.videoPath, "-vf", filter];
-        const result = (0, child_process_1.spawn)(FastPreview.ffmpeg_path, params.concat([dist]));
+        const params = [
+            "-hide_banner",
+            "-vsync",
+            "0",
+            "-c:v",
+            "h264_cuvid",
+            "-i",
+            this.videoPath,
+            "-vf",
+            filter,
+            "-y",
+            "-c:v",
+            "h264_nvenc",
+        ];
         let chunk = "";
+        const result = (0, child_process_1.spawn)(FastPreview.ffmpeg_path, params.concat([dist]));
         return new Promise((resolve, reject) => {
             result.stderr.on("data", (data) => {
                 chunk += data;
@@ -187,11 +217,157 @@ class FastPreview {
                 }
             });
             result.on("close", (code, msg) => {
-                fs_1.default.rmSync(this.videoPath);
-                fs_1.default.renameSync(dist, this.videoPath);
                 Bar.end();
-                code === 0 ? resolve(dist) : reject(msg);
+                code === 0 ? resolve(dist) : reject(chunk);
             });
+        });
+    }
+    snapshot(index, start, dur) {
+        const dist = path_1.default.join(this.tempDir, `${(0, string_1.leftPad)(index, "0", 5)}.mp4`);
+        console.log(`creating clip at ${start}: ${dist}`);
+        Bar.init(dur);
+        const params = [
+            "-ss",
+            start,
+            "-t",
+            dur,
+            "-i",
+            this.videoPath,
+            "-an",
+            "-vf",
+            `setpts=${1 / this.options.speed_multi}*PTS`,
+        ];
+        if (this.options.fps_rate > 0) {
+            params.push(...["-r", this.options.fps_rate]);
+        }
+        const result = (0, child_process_1.spawn)(FastPreview.ffmpeg_path, params.concat([dist]));
+        return new Promise((resolve, reject) => {
+            let chunk = "";
+            let error = "";
+            result.stdout.on("data", (data) => {
+                chunk += data;
+                const matched = chunk.match(/[\S\s]+time[\S\s]+?([\d\:]+)/);
+                if (matched && matched[1]) {
+                    const time = matched[1];
+                    const [hour, minute, second] = time.split(":");
+                    Bar.update(Number(hour) * 360 + Number(minute) * 60 + Number(second));
+                }
+            });
+            result.stderr.on("data", (data) => {
+                error += data;
+            });
+            result.on("close", (code) => {
+                Bar.end();
+                if (code !== 0) {
+                    reject(error);
+                }
+                else {
+                    resolve(dist);
+                }
+            });
+        });
+    }
+    mergeClips(clips) {
+        const outputTXTPath = path_1.default.join(this.tempDir, `/output.txt`);
+        const outputMP4Path = path_1.default.join(this.tempDir, `/output.mp4`);
+        fs_1.default.writeFileSync(outputTXTPath, clips.map((item) => `file '${item}'`).join("\r\n"), { encoding: "utf8" });
+        const result = (0, child_process_1.spawn)(FastPreview.ffmpeg_path, [
+            "-v",
+            "quiet",
+            "-safe",
+            "0",
+            "-f",
+            "concat",
+            "-i",
+            outputTXTPath,
+            "-c",
+            "copy",
+            outputMP4Path,
+        ]);
+        return new Promise((resolve, reject) => {
+            let error = "";
+            result.stderr.on("data", (data) => {
+                error += data;
+            });
+            result.on("close", (code) => {
+                if (code !== 0) {
+                    reject(error);
+                }
+                else {
+                    resolve();
+                }
+            });
+        });
+    }
+    transToWebp() {
+        const mp4 = path_1.default.join(this.tempDir, `output.mp4`);
+        const webp = path_1.default.join(this.tempDir, `${path_1.default.basename(this.videoPath, ".mp4")}.webp`);
+        console.log(`creating webp: ${webp}`);
+        const stream = this.showStreams(mp4);
+        return new Promise((resolve, reject) => {
+            if (!stream) {
+                reject("input has no streams");
+                return;
+            }
+            Bar.init(stream.nb_frames);
+            const params = [
+                "-i",
+                mp4,
+                "-vcodec",
+                "libwebp",
+                "-vf",
+                `fps=fps=20`,
+                "-lossless",
+                "0",
+                "-compression_level",
+                "3",
+                "-q:v",
+                "70",
+                "-loop",
+                "0",
+                "-preset",
+                "picture",
+                "-an",
+                "-vsync",
+                "0",
+                "-y",
+                webp,
+            ];
+            const result = (0, child_process_1.spawn)(FastPreview.ffmpeg_path, params);
+            let error = "";
+            result.stderr.on("data", (data) => {
+                error += data;
+                const matched = data.toString().match(/^[\S\s]*frame=\s*(\d+)/);
+                if (matched && matched[1]) {
+                    Bar.update(Number(matched[1]));
+                }
+            });
+            result.on("close", (code) => __awaiter(this, void 0, void 0, function* () {
+                Bar.end();
+                let result;
+                if (code !== 0) {
+                    reject(error);
+                }
+                else {
+                    const { output } = this.options;
+                    try {
+                        if (output.type === "file") {
+                            yield (0, promises_1.copyFile)(webp, output.path);
+                        }
+                        else if (output.type === "dir") {
+                            result = path_1.default.join(output.path, path_1.default.basename(webp));
+                            yield (0, promises_1.copyFile)(webp, result);
+                        }
+                        else {
+                            result = yield (0, promises_1.readFile)(webp);
+                        }
+                        resolve(result);
+                    }
+                    catch (e) {
+                        reject(e);
+                    }
+                }
+            }));
         });
     }
     showStreams(videoPath) {
@@ -209,13 +385,14 @@ class FastPreview {
             console.error(result.stderr);
         }
         const { streams } = JSON.parse(result.stdout);
-        return streams[0];
+        return streams.length > 0 ? streams[0] : null;
     }
     showSceneFrames() {
         console.log(`analyzing scene frames: ${this.videoPath}`);
         const stream = this.showStreams(this.videoPath);
         Bar.init(stream.duration_ts);
         let chunk = "";
+        let error = "";
         const probe = (0, child_process_1.spawn)(FastPreview.ffprobe_path, [
             "-v",
             "quiet",
@@ -238,24 +415,30 @@ class FastPreview {
                 }
             });
             probe.stderr.on("data", (data) => {
-                console.error(`stderr: ${data}`);
-                reject(data);
+                error += data;
             });
             probe.on("close", (code) => {
-                const data = JSON.parse(chunk);
-                if (data.frames.length > 0) {
-                    data.stream = stream;
+                if (code !== 0) {
                     Bar.end();
-                    code === 0 && resolve(data);
+                    reject(error);
                 }
                 else {
-                    this.showAllFrames(stream).then(resolve).catch(reject);
+                    const data = JSON.parse(chunk);
+                    if (data.frames.length > 0) {
+                        data.stream = stream;
+                        Bar.end();
+                        resolve(data);
+                    }
+                    else {
+                        this.showAllFrames(stream).then(resolve).catch(reject);
+                    }
                 }
             });
         });
     }
     showAllFrames(stream) {
         let chunk = "";
+        let error = "";
         const probe = (0, child_process_1.spawn)(FastPreview.ffprobe_path, [
             "-v",
             "quiet",
@@ -276,14 +459,18 @@ class FastPreview {
                 }
             });
             probe.stderr.on("data", (data) => {
-                console.error(`stderr: ${data}`);
-                reject(data);
+                error += data;
             });
             probe.on("close", (code) => {
-                const data = JSON.parse(chunk);
-                data.stream = stream;
                 Bar.end();
-                code === 0 && resolve(data);
+                if (code !== 0) {
+                    reject(error);
+                }
+                else {
+                    const data = JSON.parse(chunk);
+                    data.stream = stream;
+                    resolve(data);
+                }
             });
         });
     }
@@ -330,132 +517,13 @@ class FastPreview {
         temp.sort((a, b) => (a.pkt_pts || a.pkt_dts) - (b.pkt_pts || b.pkt_dts));
         return temp;
     }
-    snapshot(index, start, dur) {
-        const dist = path_1.default.join(this.tempDir, `${(0, string_1.leftPad)(index, "0", 5)}.mp4`);
-        console.log(`creating clip at ${start}: ${dist}`);
-        Bar.init(dur);
-        let chunk = "";
-        const params = [
-            "-ss",
-            start,
-            "-t",
-            dur,
-            "-i",
-            this.videoPath,
-            "-an",
-            "-vf",
-            `${this.hasGPU ? "hwupload_cuda," : ""}setpts=${1 / this.options.speed_multi}*PTS`,
-        ];
-        if (this.options.fps_rate > 0) {
-            params.push(...["-r", this.options.fps_rate]);
-        }
-        const result = (0, child_process_1.spawn)(FastPreview.ffmpeg_path, params.concat([dist]));
-        return new Promise((resolve, reject) => {
-            result.stderr.on("data", (data) => {
-                chunk += data;
-                const matched = chunk.match(/[\S\s]+time[\S\s]+?([\d\:]+)/);
-                if (matched && matched[1]) {
-                    const time = matched[1];
-                    const [hour, minute, second] = time.split(":");
-                    Bar.update(Number(hour) * 360 + Number(minute) * 60 + Number(second));
-                }
-            });
-            result.on("close", (code) => {
-                Bar.end();
-                code === 0 ? resolve(dist) : reject();
-            });
-        });
-    }
-    mergeClips(clips) {
-        const outputTXTPath = path_1.default.join(this.tempDir, `/output.txt`);
-        const outputMP4Path = path_1.default.join(this.tempDir, `/output.mp4`);
-        fs_1.default.writeFileSync(outputTXTPath, clips.map((item) => `file '${item}'`).join("\r\n"), { encoding: "utf8" });
-        const result = (0, child_process_1.spawn)(FastPreview.ffmpeg_path, [
-            "-v",
-            "quiet",
-            "-safe",
-            "0",
-            "-f",
-            "concat",
-            "-i",
-            outputTXTPath,
-            "-c",
-            "copy",
-            outputMP4Path,
-        ]);
-        return new Promise((resolve, reject) => {
-            result.stderr.on("data", (data) => {
-                console.error(`stderr: ${data}`);
-            });
-            result.on("close", (code) => {
-                code === 0 ? resolve() : reject();
-            });
-        });
-    }
-    transToWebp() {
-        const mp4 = path_1.default.join(this.tempDir, `output.mp4`);
-        const webp = path_1.default.join(this.tempDir, `${path_1.default.basename(this.videoPath, ".mp4")}.webp`);
-        console.log(`creating webp: ${webp}`);
-        const stream = this.showStreams(mp4);
-        Bar.init(stream.nb_frames);
-        return new Promise((resolve, reject) => {
-            const result = (0, child_process_1.spawn)(FastPreview.ffmpeg_path, [
-                "-i",
-                mp4,
-                "-vcodec",
-                "libwebp",
-                "-vf",
-                `${this.hasGPU ? "hwupload_cuda," : ""}fps=fps=20`,
-                "-lossless",
-                "0",
-                "-compression_level",
-                "3",
-                "-q:v",
-                "70",
-                "-loop",
-                "0",
-                "-preset",
-                "picture",
-                "-an",
-                "-vsync",
-                "0",
-                "-y",
-                webp,
-            ]);
-            result.stderr.on("data", (data) => {
-                const matched = data.toString().match(/^[\S\s]*frame=\s*(\d+)/);
-                if (matched && matched[1]) {
-                    Bar.update(Number(matched[1]));
-                }
-            });
-            result.on("close", (code) => {
-                Bar.end();
-                let result;
-                const { output } = this.options;
-                try {
-                    if (output.type === "file") {
-                        (0, fs_1.copyFileSync)(webp, output.path);
-                    }
-                    else if (output.type === "dir") {
-                        result = path_1.default.join(output.path, path_1.default.basename(webp));
-                        (0, fs_1.copyFileSync)(webp, result);
-                    }
-                    else {
-                        result = fs_1.default.readFileSync(webp);
-                    }
-                    code === 0 ? resolve(result) : reject();
-                }
-                catch (e) {
-                    reject();
-                }
-            });
-        });
-    }
     clear() {
-        fs_1.default.rmSync(this.tempDir, {
-            recursive: true,
-            maxRetries: 5,
-            retryDelay: 5000,
+        return __awaiter(this, void 0, void 0, function* () {
+            yield (0, promises_1.rm)(this.tempDir, {
+                recursive: true,
+                maxRetries: 5,
+                retryDelay: 5000,
+            });
         });
     }
 }
