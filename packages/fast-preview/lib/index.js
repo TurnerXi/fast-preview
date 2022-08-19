@@ -159,7 +159,7 @@ class FastPreview {
                 return ans;
             }
             catch (e) {
-                console.error("failed: " + e);
+                throw e;
             }
             finally {
                 yield this.clear();

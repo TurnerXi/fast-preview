@@ -191,7 +191,7 @@ export default class FastPreview {
       const ans = await this.transToWebp();
       return ans;
     } catch (e: any) {
-      console.error("failed: " + e);
+      throw e;
     } finally {
       await this.clear();
     }

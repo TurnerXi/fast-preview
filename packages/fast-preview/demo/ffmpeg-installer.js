@@ -11,4 +11,4 @@ const preview = new FastPreview(stream, {
   fps_rate: 10,
   width: 320,
 });
-preview.exec();
+preview.exec().then(console.log).catch(console.error);
