@@ -163,8 +163,9 @@ export default class FastPreview {
         !this.checkHasScalenpp()
       ) {
         this.canMixAccel = false;
-        console.log("can`t do mix acceleration");
-        throw new Error("ttt");
+        console.log("use cpu acceleration");
+      }else{
+        console.log("use mix acceleration");
       }
 
       if (typeof this.video !== "string") {
