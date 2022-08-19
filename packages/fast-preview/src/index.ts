@@ -164,7 +164,7 @@ export default class FastPreview {
       ) {
         this.canMixAccel = false;
         console.log("use cpu acceleration");
-      }else{
+      } else {
         console.log("use mix acceleration");
       }
 
@@ -233,14 +233,14 @@ export default class FastPreview {
       "-vsync",
       "0",
       "-c:v",
-      "h264_cuvid",
+      this.canMixAccel ? "h264_cuvid" : "h264",
       "-i",
       this.videoPath,
       "-vf",
       filter,
       "-y",
       "-c:v",
-      "h264_nvenc",
+      this.canMixAccel ? "h264_nvenc" : "libx264",
     ];
     let chunk = "";
     const result = spawn(FastPreview.ffmpeg_path, params.concat([dist]));

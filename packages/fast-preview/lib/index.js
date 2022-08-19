@@ -197,14 +197,14 @@ class FastPreview {
             "-vsync",
             "0",
             "-c:v",
-            "h264_cuvid",
+            this.canMixAccel ? "h264_cuvid" : "h264",
             "-i",
             this.videoPath,
             "-vf",
             filter,
             "-y",
             "-c:v",
-            "h264_nvenc",
+            this.canMixAccel ? "h264_nvenc" : "libx264",
         ];
         let chunk = "";
         const result = (0, child_process_1.spawn)(FastPreview.ffmpeg_path, params.concat([dist]));
