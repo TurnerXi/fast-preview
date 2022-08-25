@@ -6,6 +6,14 @@ import MaxHeap from "./utils/max-heap";
 import ProgressBar from "./utils/progress-bar";
 import { escapePath, leftPad } from "./utils/string";
 
+const mSpawn = (command: string, args?: ReadonlyArray<string>) => {
+  return spawn(command, args, { windowsHide: true });
+};
+
+const mSpawnSync = (command: string, args?: ReadonlyArray<string>) => {
+  return spawnSync(command, args, { windowsHide: true, encoding: "utf8" });
+};
+
 const Bar = new ProgressBar();
 
 const CLIP_COUNT = 5;
@@ -120,34 +128,31 @@ export default class FastPreview {
   }
 
   checkHasGPU() {
-    const rst = spawnSync("nvidia-smi", ["-L"], { encoding: "utf8" });
+    const rst = mSpawnSync("nvidia-smi", ["-L"]);
     return !!rst.stdout;
   }
 
   checkHasLibwebp() {
-    const rst = spawnSync(
-      `${FastPreview.ffmpeg_path}`,
-      ["-hide_banner", "-codecs"],
-      { encoding: "utf8" }
-    );
+    const rst = mSpawnSync(`${FastPreview.ffmpeg_path}`, [
+      "-hide_banner",
+      "-codecs",
+    ]);
     return rst.stdout.indexOf("libwebp") > -1;
   }
 
   checkHasCuda() {
-    const rst = spawnSync(
-      `${FastPreview.ffmpeg_path}`,
-      ["-hide_banner", "-hwaccels"],
-      { encoding: "utf8" }
-    );
+    const rst = mSpawnSync(`${FastPreview.ffmpeg_path}`, [
+      "-hide_banner",
+      "-hwaccels",
+    ]);
     return rst.stdout.indexOf("cuda") > -1;
   }
 
   checkHasScalenpp() {
-    const rst = spawnSync(
-      `${FastPreview.ffmpeg_path}`,
-      ["-hide_banner", "-filters"],
-      { encoding: "utf8" }
-    );
+    const rst = spawnSync(`${FastPreview.ffmpeg_path}`, [
+      "-hide_banner",
+      "-filters",
+    ]);
     return rst.stdout.indexOf("scale_npp") > -1;
   }
 
@@ -280,7 +285,7 @@ export default class FastPreview {
     if (this.options.fps_rate > 0) {
       params.push(...["-r", this.options.fps_rate]);
     }
-    const result = spawn(FastPreview.ffmpeg_path, params.concat([dist]));
+    const result = mSpawn(FastPreview.ffmpeg_path, params.concat([dist]));
     return new Promise((resolve, reject) => {
       let chunk = "";
       let error = "";
@@ -317,7 +322,7 @@ export default class FastPreview {
       clips.map((item) => `file '${item}'`).join("\r\n"),
       { encoding: "utf8" }
     );
-    const result = spawn(FastPreview.ffmpeg_path, [
+    const result = mSpawn(FastPreview.ffmpeg_path, [
       "-v",
       "quiet",
       "-safe",
@@ -382,7 +387,7 @@ export default class FastPreview {
         "-y",
         webp,
       ];
-      const result = spawn(FastPreview.ffmpeg_path, params);
+      const result = mSpawn(FastPreview.ffmpeg_path, params);
       let error = "";
       result.stderr.on("data", (data) => {
         error += data;
@@ -418,24 +423,20 @@ export default class FastPreview {
   }
 
   showStreams(videoPath: string) {
-    const result = spawnSync(
-      FastPreview.ffprobe_path,
-      [
-        "-v",
-        "quiet",
-        "-show_streams",
-        "-select_streams",
-        "v",
-        "-of",
-        "json",
-        videoPath,
-      ],
-      { encoding: "utf8" }
-    );
+    const result = mSpawnSync(FastPreview.ffprobe_path, [
+      "-v",
+      "quiet",
+      "-show_streams",
+      "-select_streams",
+      "v",
+      "-of",
+      "json",
+      videoPath,
+    ]);
     if (result.stderr) {
       console.error(result.stderr);
     }
-    const { streams } = JSON.parse(result.stdout);
+    const { streams } = JSON.parse(String(result.stdout));
     return streams.length > 0 ? streams[0] : null;
   }
 
@@ -445,7 +446,7 @@ export default class FastPreview {
     Bar.init(stream.duration_ts);
     let chunk = "";
     let error = "";
-    const probe = spawn(FastPreview.ffprobe_path, [
+    const probe = mSpawn(FastPreview.ffprobe_path, [
       "-v",
       "quiet",
       "-show_frames",
@@ -492,7 +493,7 @@ export default class FastPreview {
   showAllFrames(stream: any) {
     let chunk = "";
     let error = "";
-    const probe = spawn(FastPreview.ffprobe_path, [
+    const probe = mSpawn(FastPreview.ffprobe_path, [
       "-v",
       "quiet",
       "-show_frames",
