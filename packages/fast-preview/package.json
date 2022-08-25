@@ -4,6 +4,7 @@
   "main": "./lib/index.js",
   "license": "MIT",
   "description": "A tool for generating thumbnail(animated webp) from a video",
+  "homepage": "https://github.com/TurnerXi/fast-preview#readme",
   "keywords": [
     "ffmpeg",
     "animated webp",
@@ -16,15 +17,19 @@
     "build": "tsc"
   },
   "author": "TurnerXi <silencetheseyears@foxmail.com>",
-  "bugs": {
-    "mail": "silencetheseyears@foxmail.com",
-    "url": "https://github.com/TurnerXi/fast-preview/issues"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TurnerXi/fast-preview.git"
   },
   "dependencies": {
     "chalk": "^4.1.2"
   },
+  "bugs": {
+    "mail": "silencetheseyears@foxmail.com",
+    "url": "https://github.com/TurnerXi/fast-preview/issues"
+  },
   "engines": {
-    "node": ">=0.8.0"
+    "node": ">=12.8.0"
   },
   "devDependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
