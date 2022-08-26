@@ -238,7 +238,12 @@ class FastPreview {
         }
         if (this.options.width !== DEFALUT_SIZE &&
             this.options.height !== DEFALUT_SIZE) {
-            filter += `:force_original_aspect_ratio=decrease,pad=${this.options.width}:${this.options.height}:(ow-iw)/2:(oh-ih)/2`;
+            if (!this.hasScaleNppFilter) {
+                filter += `:force_original_aspect_ratio=decrease`;
+            }
+            else {
+                filter += `:force_original_aspect_ratio=decrease,pad=${this.options.width}:${this.options.height}:(ow-iw)/2:(oh-ih)/2`;
+            }
         }
         const params = [
             "-hide_banner",
