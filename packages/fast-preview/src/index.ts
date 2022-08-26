@@ -255,7 +255,7 @@ export default class FastPreview {
     if (this.canMixAccel && this.hasScaleNppFilter) {
       filter += `fade,hwupload_cuda,scale_npp=${this.options.width}:${this.options.height}:interp_algo=super`;
     } else if (this.canMixAccel && this.hasScaleCudaFilter) {
-      filter += `fade,hwupload_cuda,scale_cuda=${this.options.width}:${this.options.height}:interp_algo=super`;
+      filter += `fade,hwupload_cuda,scale_cuda=${this.options.width}:${this.options.height}`;
     } else {
       filter += `scale=${this.options.width}:${this.options.height}`;
     }
