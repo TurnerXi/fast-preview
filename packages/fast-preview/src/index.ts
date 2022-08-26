@@ -74,6 +74,8 @@ export default class FastPreview {
     height: number;
     log: boolean;
   };
+  private hasScaleCudaFilter: boolean = false;
+  private hasScaleNppFilter: boolean = false;
 
   public static setFfmpegPath(path: string) {
     FastPreview.ffmpeg_path = path;
@@ -129,6 +131,10 @@ export default class FastPreview {
 
   checkHasGPU() {
     const rst = mSpawnSync("nvidia-smi", ["-L"]);
+    if (rst.stderr) {
+      console.log(rst.stderr);
+      return;
+    }
     return !!rst.stdout;
   }
 
@@ -137,6 +143,10 @@ export default class FastPreview {
       "-hide_banner",
       "-codecs",
     ]);
+    if (rst.stderr) {
+      console.log(rst.stderr);
+      return;
+    }
     return rst.stdout.indexOf("libwebp") > -1;
   }
 
@@ -145,6 +155,10 @@ export default class FastPreview {
       "-hide_banner",
       "-hwaccels",
     ]);
+    if (rst.stderr) {
+      console.log(rst.stderr);
+      return;
+    }
     return rst.stdout.indexOf("cuda") > -1;
   }
 
@@ -153,7 +167,23 @@ export default class FastPreview {
       "-hide_banner",
       "-filters",
     ]);
+    if (rst.stderr) {
+      console.log(rst.stderr);
+      return false;
+    }
     return rst.stdout.indexOf("scale_npp") > -1;
+  }
+
+  checkHasScaleCuda() {
+    const rst = spawnSync(`ffmpeg`, ["-hide_banner", "-filters"], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    if (rst.stderr) {
+      console.log(rst.stderr);
+      return false;
+    }
+    return rst.stdout.indexOf("scale_cuda") > -1;
   }
 
   async exec() {
@@ -162,13 +192,14 @@ export default class FastPreview {
         throw new Error("please enable libwebp");
       }
 
+      this.hasScaleCudaFilter = this.checkHasScaleCuda();
+      this.hasScaleNppFilter = this.checkHasScalenpp();
       if (
         !this.checkHasGPU() ||
         !this.checkHasCuda() ||
-        !this.checkHasScalenpp()
+        (!this.hasScaleCudaFilter && !this.hasScaleNppFilter)
       ) {
         this.canMixAccel = false;
-        console.log("use cpu acceleration");
       } else {
         console.log("use mix acceleration");
       }
@@ -221,8 +252,10 @@ export default class FastPreview {
     const dist = path.join(this.tempDir, Date.now() + ".mp4");
 
     let filter = "";
-    if (this.canMixAccel) {
+    if (this.canMixAccel && this.hasScaleNppFilter) {
       filter += `fade,hwupload_cuda,scale_npp=${this.options.width}:${this.options.height}:interp_algo=super`;
+    } else if (this.canMixAccel && this.hasScaleCudaFilter) {
+      filter += `fade,hwupload_cuda,scale_cuda=${this.options.width}:${this.options.height}:interp_algo=super`;
     } else {
       filter += `scale=${this.options.width}:${this.options.height}`;
     }

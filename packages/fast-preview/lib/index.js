@@ -74,6 +74,8 @@ class FastPreview {
         this.video = video;
         this.videoPath = "";
         this.canMixAccel = true;
+        this.hasScaleCudaFilter = false;
+        this.hasScaleNppFilter = false;
         if (!FastPreview.ffmpeg_path) {
             FastPreview.ffmpeg_path = process.env.FFMPEG_PATH || "ffmpeg";
         }
@@ -118,6 +120,10 @@ class FastPreview {
     }
     checkHasGPU() {
         const rst = mSpawnSync("nvidia-smi", ["-L"]);
+        if (rst.stderr) {
+            console.log(rst.stderr);
+            return;
+        }
         return !!rst.stdout;
     }
     checkHasLibwebp() {
@@ -125,6 +131,10 @@ class FastPreview {
             "-hide_banner",
             "-codecs",
         ]);
+        if (rst.stderr) {
+            console.log(rst.stderr);
+            return;
+        }
         return rst.stdout.indexOf("libwebp") > -1;
     }
     checkHasCuda() {
@@ -132,6 +142,10 @@ class FastPreview {
             "-hide_banner",
             "-hwaccels",
         ]);
+        if (rst.stderr) {
+            console.log(rst.stderr);
+            return;
+        }
         return rst.stdout.indexOf("cuda") > -1;
     }
     checkHasScalenpp() {
@@ -139,7 +153,22 @@ class FastPreview {
             "-hide_banner",
             "-filters",
         ]);
+        if (rst.stderr) {
+            console.log(rst.stderr);
+            return false;
+        }
         return rst.stdout.indexOf("scale_npp") > -1;
+    }
+    checkHasScaleCuda() {
+        const rst = (0, child_process_1.spawnSync)(`ffmpeg`, ["-hide_banner", "-filters"], {
+            encoding: "utf8",
+            windowsHide: true,
+        });
+        if (rst.stderr) {
+            console.log(rst.stderr);
+            return false;
+        }
+        return rst.stdout.indexOf("scale_cuda") > -1;
     }
     exec() {
         return __awaiter(this, void 0, void 0, function* () {
@@ -147,11 +176,12 @@ class FastPreview {
                 if (!this.checkHasLibwebp()) {
                     throw new Error("please enable libwebp");
                 }
+                this.hasScaleCudaFilter = this.checkHasScaleCuda();
+                this.hasScaleNppFilter = this.checkHasScalenpp();
                 if (!this.checkHasGPU() ||
                     !this.checkHasCuda() ||
-                    !this.checkHasScalenpp()) {
+                    (!this.hasScaleCudaFilter && !this.hasScaleNppFilter)) {
                     this.canMixAccel = false;
-                    console.log("use cpu acceleration");
                 }
                 else {
                     console.log("use mix acceleration");
@@ -197,8 +227,11 @@ class FastPreview {
         Bar.init(Number(stream.duration));
         const dist = path_1.default.join(this.tempDir, Date.now() + ".mp4");
         let filter = "";
-        if (this.canMixAccel) {
+        if (this.canMixAccel && this.hasScaleNppFilter) {
             filter += `fade,hwupload_cuda,scale_npp=${this.options.width}:${this.options.height}:interp_algo=super`;
+        }
+        else if (this.canMixAccel && this.hasScaleCudaFilter) {
+            filter += `fade,hwupload_cuda,scale_cuda=${this.options.width}:${this.options.height}:interp_algo=super`;
         }
         else {
             filter += `scale=${this.options.width}:${this.options.height}`;
