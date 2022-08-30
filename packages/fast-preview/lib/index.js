@@ -247,6 +247,12 @@ class FastPreview {
             if (!this.canMixAccel || this.hasScaleNppFilter) {
                 filter += `:force_original_aspect_ratio=decrease,pad=${this.options.width}:${this.options.height}:(ow-iw)/2:(oh-ih)/2`;
             }
+            else {
+                filter =
+                    `pad=ih*${this.options.width}/${this.options.height}:ih:(ow-iw)/2:(oh-ih)/2,` +
+                        filter +
+                        ":force_original_aspect_ratio=decrease";
+            }
         }
         const params = [
             "-hide_banner",
