@@ -93,7 +93,7 @@ class FastPreview {
             throw new Error(`input video error`);
         }
         this.options = Object.assign({}, defaultOptions, options);
-        progress_bar_1.default.isShow = this.options.progress;
+        progress_bar_1.default.isShow = this.options.progress || !!this.options.log;
         // this.clip_range =
         //   options.clip_range && options.clip_range.length >= 2
         //     ? options.clip_range

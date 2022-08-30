@@ -49,6 +49,7 @@ export interface FastPreviewOptions {
   speed_multi?: number;
   width?: number;
   height?: number;
+  log?: boolean;
   progress?: boolean;
   debug?: boolean;
 }
@@ -74,6 +75,7 @@ export default class FastPreview {
     speed_multi: number;
     width: number;
     height: number;
+    log?: boolean;
     progress: boolean;
     debug: boolean;
   };
@@ -114,7 +116,7 @@ export default class FastPreview {
       throw new Error(`input video error`);
     }
     this.options = Object.assign({}, defaultOptions, options);
-    ProgressBar.isShow = this.options.progress;
+    ProgressBar.isShow = this.options.progress || !!this.options.log;
     // this.clip_range =
     //   options.clip_range && options.clip_range.length >= 2
     //     ? options.clip_range
