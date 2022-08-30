@@ -244,10 +244,7 @@ class FastPreview {
         }
         if (this.options.width !== DEFALUT_SIZE &&
             this.options.height !== DEFALUT_SIZE) {
-            if (!this.hasScaleNppFilter) {
-                filter += `:force_original_aspect_ratio=decrease`;
-            }
-            else {
+            if (!this.canMixAccel || this.hasScaleNppFilter) {
                 filter += `:force_original_aspect_ratio=decrease,pad=${this.options.width}:${this.options.height}:(ow-iw)/2:(oh-ih)/2`;
             }
         }
