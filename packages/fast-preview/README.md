@@ -48,7 +48,9 @@ var preview = new FastPreview('video.mp4',{
   },
   speed_multi: 2,
   width: 320, // number -1(default)
-  height: -1  // number -1(default)
+  height: -1, // number -1(default)
+  progress: false // 进度条 boolean(default false)
+  debug: false // 日志 boolean(default false)
 });
 preview.exec()
 ```
@@ -64,6 +66,10 @@ preview.exec()
 - `output`: 动态预览图生成的路径或 buffer
 - `width`: 视频缩放宽度, 默认-1(按高度等比缩放)
 - `height`: 视频缩放高度, 默认-1(按宽度等比缩放)
+- `progress`: 是否显示进度条, 默认false
+- `debug`: 是否显示debug日志, 默认false
+
+
 
 ## License
 

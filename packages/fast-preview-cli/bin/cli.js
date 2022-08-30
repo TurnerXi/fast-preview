@@ -50,7 +50,7 @@ program
   )
   .addOption(
     new Option(
-      "-h, --height <number>",
+      "--height <number>",
       "视频缩放高度, 默认-1(按宽度等比缩放)"
     ).default(-1)
   )
@@ -70,7 +70,8 @@ program
           speed_multi: options.speedMulti,
           width: options.width,
           height: options.height,
-          log: true,
+          progress: true,
+          debug: true,
         });
 
         await preview.exec();

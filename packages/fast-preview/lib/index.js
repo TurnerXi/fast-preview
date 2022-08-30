@@ -67,7 +67,8 @@ const defaultOptions = {
     speed_multi: SPEED_MULTI,
     width: DEFALUT_SIZE,
     height: DEFALUT_SIZE,
-    log: true,
+    progress: true,
+    debug: true,
 };
 class FastPreview {
     constructor(video, options) {
@@ -92,7 +93,7 @@ class FastPreview {
             throw new Error(`input video error`);
         }
         this.options = Object.assign({}, defaultOptions, options);
-        progress_bar_1.default.isShow = this.options.log;
+        progress_bar_1.default.isShow = this.options.progress;
         // this.clip_range =
         //   options.clip_range && options.clip_range.length >= 2
         //     ? options.clip_range
@@ -118,10 +119,15 @@ class FastPreview {
     static setFfprobePath(path) {
         FastPreview.ffprobe_path = path;
     }
+    debug(...msg) {
+        if (this.options.debug) {
+            console.log(...msg);
+        }
+    }
     checkHasGPU() {
         const rst = mSpawnSync("nvidia-smi", ["-L"]);
         if (rst.stderr) {
-            console.log(rst.stderr);
+            this.debug(rst.stderr);
             return;
         }
         return !!rst.stdout;
@@ -132,7 +138,7 @@ class FastPreview {
             "-codecs",
         ]);
         if (rst.stderr) {
-            console.log(rst.stderr);
+            this.debug(rst.stderr);
             return;
         }
         return rst.stdout.indexOf("libwebp") > -1;
@@ -143,7 +149,7 @@ class FastPreview {
             "-hwaccels",
         ]);
         if (rst.stderr) {
-            console.log(rst.stderr);
+            this.debug(rst.stderr);
             return;
         }
         return rst.stdout.indexOf("cuda") > -1;
@@ -154,7 +160,7 @@ class FastPreview {
             "-filters",
         ]);
         if (rst.stderr) {
-            console.log(rst.stderr);
+            this.debug(rst.stderr);
             return false;
         }
         return rst.stdout.indexOf("scale_npp") > -1;
@@ -165,7 +171,7 @@ class FastPreview {
             windowsHide: true,
         });
         if (rst.stderr) {
-            console.log(rst.stderr);
+            this.debug(rst.stderr);
             return false;
         }
         return rst.stdout.indexOf("scale_cuda") > -1;
@@ -184,14 +190,14 @@ class FastPreview {
                     this.canMixAccel = false;
                 }
                 else {
-                    console.log("use mix acceleration");
+                    this.debug("use mix acceleration");
                 }
                 if (typeof this.video !== "string") {
                     this.videoPath = yield this.writeVideo(this.video);
                 }
                 if (this.options.width !== DEFALUT_SIZE ||
                     this.options.height !== DEFALUT_SIZE) {
-                    yield this.resizeVideo();
+                    this.videoPath = yield this.resizeVideo();
                 }
                 const data = yield this.showSceneFrames();
                 const [start, end] = this.options.clip_range.map((item) => item * data.stream.duration_ts);
@@ -222,7 +228,7 @@ class FastPreview {
         });
     }
     resizeVideo() {
-        console.log(`resize video: ${this.videoPath}`);
+        this.debug(`resize video: ${this.videoPath}`);
         const stream = this.showStreams(this.videoPath);
         Bar.init(Number(stream.duration));
         const dist = path_1.default.join(this.tempDir, Date.now() + ".mp4");
@@ -279,7 +285,7 @@ class FastPreview {
     }
     snapshot(index, start, dur) {
         const dist = path_1.default.join(this.tempDir, `${(0, string_1.leftPad)(index, "0", 5)}.mp4`);
-        console.log(`creating clip at ${start}: ${dist}`);
+        this.debug(`creating clip at ${start}: ${dist}`);
         Bar.init(dur);
         const params = [
             "-ss",
@@ -357,7 +363,7 @@ class FastPreview {
     transToWebp() {
         const mp4 = path_1.default.join(this.tempDir, `output.mp4`);
         const webp = path_1.default.join(this.tempDir, `${path_1.default.basename(this.videoPath, ".mp4")}.webp`);
-        console.log(`creating webp: ${webp}`);
+        this.debug(`creating webp: ${webp}`);
         const stream = this.showStreams(mp4);
         return new Promise((resolve, reject) => {
             if (!stream) {
@@ -443,7 +449,7 @@ class FastPreview {
         return streams.length > 0 ? streams[0] : null;
     }
     showSceneFrames() {
-        console.log(`analyzing scene frames: ${this.videoPath}`);
+        this.debug(`analyzing scene frames: ${this.videoPath}`);
         const stream = this.showStreams(this.videoPath);
         Bar.init(stream.duration_ts);
         let chunk = "";

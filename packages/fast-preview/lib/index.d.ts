@@ -10,7 +10,8 @@ export interface FastPreviewOptions {
     speed_multi?: number;
     width?: number;
     height?: number;
-    log?: boolean;
+    progress?: boolean;
+    debug?: boolean;
 }
 export interface OutputOptions {
     type: "dir" | "file" | "buffer";
@@ -28,6 +29,7 @@ export default class FastPreview {
     private hasScaleNppFilter;
     static setFfmpegPath(path: string): void;
     static setFfprobePath(path: string): void;
+    debug(...msg: any[]): void;
     constructor(video: string | ReadStream, options?: FastPreviewOptions);
     checkHasGPU(): boolean | undefined;
     checkHasLibwebp(): boolean | undefined;
@@ -36,7 +38,7 @@ export default class FastPreview {
     checkHasScaleCuda(): boolean;
     exec(): Promise<unknown>;
     writeVideo(stream: ReadStream): Promise<string>;
-    resizeVideo(): Promise<unknown>;
+    resizeVideo(): Promise<string>;
     snapshot(index: number, start: number, dur: number): Promise<unknown>;
     mergeClips(clips: any[]): Promise<void>;
     transToWebp(): Promise<unknown>;
