@@ -259,7 +259,7 @@ export default class FastPreview {
       this.options.height !== DEFALUT_SIZE
     ) {
       filter.push(
-        `pad=ih*${this.options.width}/${this.options.height}:ih:(ow-iw)/2:(oh-ih)/2`
+        `pad=max(iw\\,ih*(${this.options.width}/${this.options.height})):ow/(${this.options.width}/${this.options.height}):(ow-iw)/2:(oh-ih)/2`
       );
     }
     if (this.canMixAccel && this.hasScaleNppFilter) {

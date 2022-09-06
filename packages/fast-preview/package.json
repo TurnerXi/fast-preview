@@ -32,8 +32,6 @@
     "node": ">=12.8.0"
   },
   "devDependencies": {
-    "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "@ffprobe-installer/ffprobe": "^1.4.1",
     "@types/node": "^18.0.6",
     "@typescript-eslint/eslint-plugin": "^5.30.7",
     "@typescript-eslint/parser": "^5.30.7",

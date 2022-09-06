@@ -231,7 +231,7 @@ class FastPreview {
         let filter = [`setpts=${1 / this.options.speed_multi}*PTS`];
         if (this.options.width !== DEFALUT_SIZE &&
             this.options.height !== DEFALUT_SIZE) {
-            filter.push(`pad=ih*${this.options.width}/${this.options.height}:ih:(ow-iw)/2:(oh-ih)/2`);
+            filter.push(`pad=max(iw\\,ih*(${this.options.width}/${this.options.height})):ow/(${this.options.width}/${this.options.height}):(ow-iw)/2:(oh-ih)/2`);
         }
         if (this.canMixAccel && this.hasScaleNppFilter) {
             filter.push(`fade,hwupload_cuda,scale_npp=${this.options.width}:${this.options.height}:interp_algo=super`);
