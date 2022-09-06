@@ -286,7 +286,7 @@ export default class FastPreview {
       this.videoPath,
       "-an",
       "-vf",
-      filter.join(','),
+      filter.join(","),
       "-c:v",
       this.canMixAccel ? "h264_nvenc" : "libx264",
     ];
@@ -468,7 +468,7 @@ export default class FastPreview {
       "json",
       "-f",
       "lavfi",
-      `movie='${escapePath(this.videoPath)}',select='gt(scene\,.2)'`,
+      `movie='${escapePath(this.videoPath)}',select='gt(scene\,0)'`,
     ];
     const probe = mSpawn(params[0], params.slice(1));
     return new Promise((resolve, reject) => {
@@ -488,7 +488,7 @@ export default class FastPreview {
       probe.on("close", (code) => {
         if (code !== 0) {
           Bar.end();
-          reject(params.join(" ") + "\r\n" + error || chunk);
+          reject(params.join(" ") + "\r\n" + (error || chunk));
         } else {
           const data = JSON.parse(chunk);
           if (data.frames.length > 0) {
