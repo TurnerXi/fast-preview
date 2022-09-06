@@ -195,16 +195,13 @@ class FastPreview {
                 if (typeof this.video !== "string") {
                     this.videoPath = yield this.writeVideo(this.video);
                 }
-                if (this.options.width !== DEFALUT_SIZE ||
-                    this.options.height !== DEFALUT_SIZE) {
-                    this.videoPath = yield this.resizeVideo();
-                }
                 const data = yield this.showSceneFrames();
                 const [start, end] = this.options.clip_range.map((item) => item * data.stream.duration_ts);
-                const clips = yield this.parseFrames(data.frames.filter((item) => {
+                data.frames = data.frames.filter((item) => {
                     const pkt_frame = item.pkt_pts || item.pkt_dts;
                     return pkt_frame >= start && pkt_frame <= end;
-                }));
+                });
+                const clips = yield this.parseFrames(this.searchFrames(data.frames));
                 yield this.mergeClips(clips);
                 const ans = yield this.transToWebp();
                 return ans;
@@ -227,84 +224,44 @@ class FastPreview {
             });
         });
     }
-    resizeVideo() {
-        this.debug(`resize video: ${this.videoPath}`);
-        const stream = this.showStreams(this.videoPath);
-        Bar.init(Number(stream.duration));
-        const dist = path_1.default.join(this.tempDir, Date.now() + ".mp4");
-        let filter = "";
-        if (this.canMixAccel && this.hasScaleNppFilter) {
-            filter += `fade,hwupload_cuda,scale_npp=${this.options.width}:${this.options.height}:interp_algo=super`;
-        }
-        else if (this.canMixAccel && this.hasScaleCudaFilter) {
-            filter += `fade,hwupload_cuda,scale_cuda=${this.options.width}:${this.options.height}`;
-        }
-        else {
-            filter += `scale=${this.options.width}:${this.options.height}`;
-        }
-        if (this.options.width !== DEFALUT_SIZE &&
-            this.options.height !== DEFALUT_SIZE) {
-            if (!this.canMixAccel || this.hasScaleNppFilter) {
-                filter += `:force_original_aspect_ratio=decrease,pad=${this.options.width}:${this.options.height}:(ow-iw)/2:(oh-ih)/2`;
-            }
-            else {
-                filter =
-                    `pad=ih*${this.options.width}/${this.options.height}:ih:(ow-iw)/2:(oh-ih)/2,` +
-                        filter +
-                        ":force_original_aspect_ratio=decrease";
-            }
-        }
-        const params = [
-            "-hide_banner",
-            "-vsync",
-            "0",
-            "-c:v",
-            this.canMixAccel ? "h264_cuvid" : "h264",
-            "-i",
-            this.videoPath,
-            "-vf",
-            filter,
-            "-y",
-            "-c:v",
-            this.canMixAccel ? "h264_nvenc" : "libx264",
-        ];
-        let chunk = "";
-        const result = (0, child_process_1.spawn)(FastPreview.ffmpeg_path, params.concat([dist]));
-        return new Promise((resolve, reject) => {
-            result.stderr.on("data", (data) => {
-                chunk += data;
-                const matched = chunk.match(/[\S\s]+time[\S\s]+?([\d\:]+)/);
-                if (matched && matched[1]) {
-                    const time = matched[1];
-                    const [hour, minute, second] = time.split(":");
-                    Bar.update(Number(hour) * 360 + Number(minute) * 60 + Number(second));
-                }
-            });
-            result.on("close", (code, msg) => {
-                Bar.end();
-                code === 0 ? resolve(dist) : reject(chunk);
-            });
-        });
-    }
     snapshot(index, start, dur) {
         const dist = path_1.default.join(this.tempDir, `${(0, string_1.leftPad)(index, "0", 5)}.mp4`);
         this.debug(`creating clip at ${start}: ${dist}`);
         Bar.init(dur);
+        let filter = [`setpts=${1 / this.options.speed_multi}*PTS`];
+        if (this.options.width !== DEFALUT_SIZE &&
+            this.options.height !== DEFALUT_SIZE) {
+            filter.push(`pad=ih*${this.options.width}/${this.options.height}:ih:(ow-iw)/2:(oh-ih)/2`);
+        }
+        if (this.canMixAccel && this.hasScaleNppFilter) {
+            filter.push(`fade,hwupload_cuda,scale_npp=${this.options.width}:${this.options.height}:interp_algo=super`);
+        }
+        else if (this.canMixAccel && this.hasScaleCudaFilter) {
+            filter.push(`fade,hwupload_cuda,scale_cuda=${this.options.width}:${this.options.height}`);
+        }
+        else {
+            filter.push(`scale=${this.options.width}:${this.options.height}`);
+        }
         const params = [
+            FastPreview.ffmpeg_path,
             "-ss",
             start,
             "-t",
             dur,
+            "-c:v",
+            this.canMixAccel ? "h264_cuvid" : "h264",
             "-i",
             this.videoPath,
             "-an",
             "-vf",
-            `setpts=${1 / this.options.speed_multi}*PTS`,
+            filter.join(','),
+            "-c:v",
+            this.canMixAccel ? "h264_nvenc" : "libx264",
         ];
         if (this.options.fps_rate > 0) {
             params.push(...["-r", this.options.fps_rate]);
         }
-        const result = mSpawn(FastPreview.ffmpeg_path, params.concat([dist]));
+        const result = mSpawn(params[0], params.concat([dist]).slice(1));
         return new Promise((resolve, reject) => {
             let chunk = "";
             let error = "";
@@ -323,7 +280,7 @@ class FastPreview {
             result.on("close", (code) => {
                 Bar.end();
                 if (code !== 0) {
-                    reject(error);
+                    reject(params.join(" ") + "\r\n" + error);
                 }
                 else {
                     resolve(dist);
@@ -335,7 +292,8 @@ class FastPreview {
         const outputTXTPath = path_1.default.join(this.tempDir, `/output.txt`);
         const outputMP4Path = path_1.default.join(this.tempDir, `/output.mp4`);
         fs_1.default.writeFileSync(outputTXTPath, clips.map((item) => `file '${item}'`).join("\r\n"), { encoding: "utf8" });
-        const result = mSpawn(FastPreview.ffmpeg_path, [
+        const params = [
+            FastPreview.ffmpeg_path,
             "-v",
             "quiet",
             "-safe",
@@ -347,7 +305,8 @@ class FastPreview {
             "-c",
             "copy",
             outputMP4Path,
-        ]);
+        ];
+        const result = mSpawn(params[0], params.slice(1));
         return new Promise((resolve, reject) => {
             let error = "";
             result.stderr.on("data", (data) => {
@@ -355,7 +314,7 @@ class FastPreview {
             });
             result.on("close", (code) => {
                 if (code !== 0) {
-                    reject(error);
+                    reject(params.join(" ") + "\r\n" + error);
                 }
                 else {
                     resolve();
@@ -375,6 +334,7 @@ class FastPreview {
             }
             Bar.init(stream.nb_frames);
             const params = [
+                FastPreview.ffmpeg_path,
                 "-i",
                 mp4,
                 "-vcodec",
@@ -397,7 +357,7 @@ class FastPreview {
                 "-y",
                 webp,
             ];
-            const result = mSpawn(FastPreview.ffmpeg_path, params);
+            const result = mSpawn(params[0], params.slice(1));
             let error = "";
             result.stderr.on("data", (data) => {
                 error += data;
@@ -410,7 +370,7 @@ class FastPreview {
                 Bar.end();
                 let result;
                 if (code !== 0) {
-                    reject(error);
+                    reject(params.join(" ") + "\r\n" + error);
                 }
                 else {
                     const { output } = this.options;
@@ -435,7 +395,8 @@ class FastPreview {
         });
     }
     showStreams(videoPath) {
-        const result = mSpawnSync(FastPreview.ffprobe_path, [
+        const params = [
+            FastPreview.ffprobe_path,
             "-v",
             "quiet",
             "-show_streams",
@@ -444,9 +405,10 @@ class FastPreview {
             "-of",
             "json",
             videoPath,
-        ]);
+        ];
+        const result = mSpawnSync(params[0], params.slice(1));
         if (result.stderr) {
-            console.error(result.stderr);
+            console.error(params.join(" ") + "\r\n" + result.stderr);
         }
         const { streams } = JSON.parse(String(result.stdout));
         return streams.length > 0 ? streams[0] : null;
@@ -457,9 +419,8 @@ class FastPreview {
         Bar.init(stream.duration_ts);
         let chunk = "";
         let error = "";
-        const probe = mSpawn(FastPreview.ffprobe_path, [
-            "-v",
-            "quiet",
+        const params = [
+            FastPreview.ffprobe_path,
             "-show_frames",
             "-select_streams",
             "v",
@@ -467,8 +428,9 @@ class FastPreview {
             "json",
             "-f",
             "lavfi",
-            `movie='${(0, string_1.escapePath)(this.videoPath)}',select='gt(scene\,.4)'`,
-        ]);
+            `movie='${(0, string_1.escapePath)(this.videoPath)}',select='gt(scene\,.2)'`,
+        ];
+        const probe = mSpawn(params[0], params.slice(1));
         return new Promise((resolve, reject) => {
             probe.stdout.on("data", (data) => {
                 chunk += data;
@@ -484,7 +446,7 @@ class FastPreview {
             probe.on("close", (code) => {
                 if (code !== 0) {
                     Bar.end();
-                    reject(error);
+                    reject(params.join(" ") + "\r\n" + error || chunk);
                 }
                 else {
                     const data = JSON.parse(chunk);
@@ -504,8 +466,6 @@ class FastPreview {
         let chunk = "";
         let error = "";
         const probe = mSpawn(FastPreview.ffprobe_path, [
-            "-v",
-            "quiet",
             "-show_frames",
             "-select_streams",
             "v",
@@ -541,7 +501,6 @@ class FastPreview {
     parseFrames(frames) {
         return __awaiter(this, void 0, void 0, function* () {
             const clips = [];
-            frames = this.searchFrames(frames);
             for (let index = 0; index < frames.length; index++) {
                 clips.push(yield this.snapshot(index, Number(frames[index].pkt_pts_time || frames[index].pkt_dts_time), this.options.clip_time));
             }

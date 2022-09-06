@@ -39,7 +39,6 @@ export default class FastPreview {
     checkHasScaleCuda(): boolean;
     exec(): Promise<unknown>;
     writeVideo(stream: ReadStream): Promise<string>;
-    resizeVideo(): Promise<string>;
     snapshot(index: number, start: number, dur: number): Promise<unknown>;
     mergeClips(clips: any[]): Promise<void>;
     transToWebp(): Promise<unknown>;
