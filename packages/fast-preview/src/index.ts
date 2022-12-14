@@ -186,7 +186,7 @@ export default class FastPreview {
   }
 
   checkHasScaleCuda() {
-    const rst = spawnSync(`ffmpeg`, ["-hide_banner", "-filters"], {
+    const rst = spawnSync(`${FastPreview.ffmpeg_path}`, ["-hide_banner", "-filters"], {
       encoding: "utf8",
       windowsHide: true,
     });
